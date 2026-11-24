@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>מדריך למשתמש: מדידת תדרי סלולר עם bladeRF Workbench Mobile</title>
+<style>
+@page { size: A4; margin: 16mm 15mm 18mm 15mm; }
+* { box-sizing: border-box; }
+body { font-family: "Open Sans", "Liberation Sans", "DejaVu Sans", sans-serif; font-size: 10.4pt; line-height: 1.5; color: #1d2430; margin: 0; }
+h1 { font-size: 23pt; margin: 0 0 4mm; color: #0e3a5c; line-height: 1.2; }
+h2 { font-size: 14.5pt; color: #0e3a5c; border-bottom: 2px solid #4ac6ff; padding-bottom: 1.5mm; margin: 7mm 0 3mm; break-after: avoid; }
+h3 { font-size: 11.5pt; color: #24507a; margin: 4mm 0 1.5mm; break-after: avoid; }
+p { margin: 0 0 2.2mm; }
+ul, ol { margin: 0 0 2.5mm; padding-inline-start: 6mm; }
+li { margin-bottom: 1mm; }
+.ltr { direction: ltr; unicode-bidi: isolate; }
+.cover { height: 250mm; display: flex; flex-direction: column; justify-content: center; }
+.cover .sub { font-size: 13pt; color: #4d5b6b; margin-bottom: 10mm; }
+.cover .meta { color: #6f7d8c; font-size: 10pt; margin-top: 8mm; }
+.cover .band { background: linear-gradient(90deg, #ffd24a, #4ac6ff, #b79cff, #7CFF6B); height: 4mm; border-radius: 2mm; margin: 6mm 0; }
+.box { border: 1px solid #c9d6e2; border-inline-start: 4px solid #4ac6ff; background: #f3f8fc; border-radius: 4px; padding: 3mm 4mm; margin: 3mm 0; break-inside: avoid; }
+.box.warn { border-inline-start-color: #e0662d; background: #fff5ef; }
+.box.ok { border-inline-start-color: #2e9e4c; background: #f1faf3; }
+.box b.t { display: block; margin-bottom: 1mm; }
+table { width: 100%; border-collapse: collapse; margin: 2mm 0 3mm; font-size: 9.4pt; break-inside: avoid; }
+th, td { border: 1px solid #c9d6e2; padding: 1.4mm 2mm; text-align: start; vertical-align: top; }
+th { background: #e6eff6; color: #0e3a5c; }
+td.num, th.num { direction: ltr; text-align: left; white-space: nowrap; }
+.fig { text-align: center; margin: 3mm 0; break-inside: avoid; }
+.fig img { max-width: 100%; max-height: 100mm; border: 1px solid #c9d6e2; border-radius: 3px; }
+.fig.small img { max-width: 55%; max-height: 50mm; }
+.fig .cap { font-size: 8.8pt; color: #5d6b7a; margin-top: 1mm; }
+.two { display: flex; gap: 4mm; align-items: flex-start; }
+.two > div { flex: 1; }
+.check li { list-style: none; position: relative; }
+.check li::before { content: "☐"; position: absolute; right: -6mm; }
+.pb { break-before: page; }
+.src { font-size: 8.4pt; color: #5d6b7a; direction: ltr; text-align: left; }
+.toc li { margin-bottom: 0.6mm; }
+code, .k { background: #eef2f6; border-radius: 3px; padding: 0 1.2mm; font-size: 9.4pt; }
+.k { border: 1px solid #c9d6e2; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <h1>מדידת תדרי סלולר<br>עם bladeRF Workbench Mobile</h1>
+  <div class="band"></div>
+  <div class="sub">מדריך למשתמש: הציוד, ההגדרות, זיהוי ומדידה של ערוצי LTE ו-5G, וסקר שטח על מפה</div>
+  <ol class="toc">
+    <li>מה צריך לפני שיוצאים</li>
+    <li>מיקום: GPS של הטלפון או אנטנה?</li>
+    <li>בטיחות ומגבלות המדידה</li>
+    <li>הפסים הסלולריים בישראל</li>
+    <li>חיבור והפעלה ראשונה</li>
+    <li>הגדרות מומלצות למדידת סלולר</li>
+    <li>זיהוי ערוץ: מה רואים על המסך</li>
+    <li>מדידת עוצמה: הספק בפס והערכת RSRP</li>
+    <li>סקר שטח עם מפה: נקודות, מסלולים ותמונת אזור</li>
+    <li>עבודה בלי כרטיס: סימולטור</li>
+    <li>פתרון תקלות</li>
+    <li>צ'קליסט לפני יציאה לשטח</li>
+  </ol>
+  <div class="meta">גרסת אפליקציה 1.1 · נובמבר 2026 · Netline</div>
+</section>
+
+<h2 class="pb">1. מה צריך לפני שיוצאים</h2>
+<table>
+  <tr><th style="width:30%">פריט</th><th>למה ומה לבדוק</th></tr>
+  <tr><td>bladeRF 2.0 micro (xA4)</td><td>המקלט עצמו. קולט מ-70 MHz עד 6 GHz, כך שכל הפסים הסלולריים בישראל נמצאים בתחום שלו.</td></tr>
+  <tr><td>אנטנה רחבת פס עם מחבר SMA</td><td>אנטנה ל-LTE/5G שמכסה בערך <bdi dir="ltr">700–3800 MHz</bdi>. אנטנה צרה (למשל WiFi בלבד) תראה פסים נמוכים חלשים בעשרות dB, והמפה תטעה.</td></tr>
+  <tr><td>טלפון Android 8 ומעלה</td><td>עם יציאת USB-C שתומכת ב-OTG (כמעט כל טלפון מודרני). מומלץ טלפון עם USB 3 לסריקות מהירות יותר.</td></tr>
+  <tr><td>כבל USB-C OTG, ו-USB hub עם ספק כוח</td><td>הכרטיס צורך יותר זרם ממה שטלפונים רבים מספקים. אם הכרטיס לא עולה או מתנתק באמצע, מחברים אותו דרך hub מוזן או מזינים את כניסת ה-DC שלו.</td></tr>
+  <tr><td>Power bank</td><td>לסקר הליכה ארוך. המסך דולק כל הזמן, וגם ה-bladeRF צורך חשמל.</td></tr>
+  <tr><td>קובץ FPGA (רק אם צריך)</td><td><bdi dir="ltr">hostedxA4.rbf</bdi> מתיקיית ההתקנה של bladeRF במחשב. צריך אותו רק אם הכרטיס לא טוען FPGA מהזיכרון שלו. טוענים פעם אחת דרך <span class="k">רדיו</span> ← <span class="k">טען hostedxA4.rbf</span>.</td></tr>
+  <tr><td>תמונת לוויין או שרטוט של האתר</td><td>לא חובה, אבל מומלץ מאוד. צילום מסך מ-Google Maps או מ-GovMap של אזור הסקר. מעלים אותה למפה ומכיילים (פרק 9).</td></tr>
+</table>
+
+<h2>2. מיקום: GPS של הטלפון או אנטנה?</h2>
+<div class="box ok"><b class="t">התשובה הקצרה: לא צריך לחבר אנטנת GPS.</b>
+המיקום של כל מדידה נלקח מה-GPS של הטלפון עצמו. ל-bladeRF 2.0 micro אין מקלט GPS, וגם לא צריך אותו כדי לתייג מיקום.</div>
+<ul>
+  <li><b>דיוק טיפוסי:</b> 3–10 מטר בשטח פתוח. ליד בניינים גבוהים זה יכול להגיע לעשרות מטרים, ובתוך מבנה לפעמים אין מיקום בכלל. האפליקציה מציגה את הדיוק בצ'יפ <span class="k">GPS ±m</span> ושומרת אותו עם כל נקודה.</li>
+  <li><b>בתוך מבנה:</b> משתמשים ב-<span class="k">✋ מיקום ידני</span> ונוגעים במפה במקום שבו עומדים. זה עובד הכי טוב על שרטוט מכויל של הקומה.</li>
+  <li><b>מתי כן חשובה אנטנת GPS לכרטיס:</b> רק לסנכרון זמן או תדר מדויק (GPSDO), למשל למדידות סטיית תדר ברמת ppb. זה לא קשור למיקום, והאפליקציה לא צריכה את זה.</li>
+  <li><b>הרשאה:</b> בפעם הראשונה שפותחים את לשונית <span class="k">מפה</span>, Android מבקש הרשאת מיקום. מאשרים "בזמן השימוש באפליקציה". אם ה-GPS כבוי בהגדרות של הטלפון, האפליקציה תציג הודעה.</li>
+</ul>
+
+<h2>3. בטיחות ומגבלות המדידה</h2>
+<div class="box warn"><b class="t">אין מנחת בכרטיס.</b>
+אסור להכניס לכניסת ה-RX יותר מ-<bdi dir="ltr">−10 dBm</bdi>. לא מחברים את ה-bladeRF ישירות ליציאה של משדר, מגבר או אתר. מאנטנה רגילה ברחוב אין סכנה. ממש ליד אנטנת אתר כדאי להנמיך את ה-Gain. האפליקציה מציגה <span class="k">רמת RX מעל −10 dBm</span> ו-<span class="k">עומס יתר בכניסה</span>.</div>
+<ul>
+  <li><b>האפליקציה קולטת בלבד.</b> היא לא משדרת כלום, והמחולל (TX) של תוכנת המחשב לא כלול בה.</li>
+  <li><b>dBm מוחלט הוא הערכה.</b> הרמה המוחלטת תלויה בכרטיס, באנטנה ובכבלים. לכיול מכניסים אות ידוע ומכוונים את <span class="k">משרעת</span> ← <span class="k">תיקון כיול</span>. השוואות יחסיות (נקודה מול נקודה, לפני ואחרי) אמינות גם בלי כיול.</li>
+  <li><b>אנלייזר ספקטרום הוא לא טלפון.</b> הוא מודד הספק בתדר. הוא לא מפענח את האות ולא יודע לאיזה מפעיל שייך ערוץ, ולכן ה-RSRP שמחושב בפרק 8 הוא הערכה.</li>
+</ul>
+
+<h2>4. הפסים הסלולריים בישראל</h2>
+<p>מאז ינואר 2026 משרד התקשורת מכבה בהדרגה את רשתות ה-2G וה-3G, ולכן ברוב המקומות רואים בעיקר 4G (LTE) ו-5G. הטבלה מפרטת את טווחי ה-Downlink, שבהם האתרים משדרים. את הטווחים האלה מודדים בסקר. לכל אחד מהם יש פריסט מוכן באפליקציה.</p>
+<table>
+  <tr><th>פס</th><th>טכנולוגיה</th><th class="num">Downlink (MHz)</th><th class="num">Uplink (MHz)</th><th>הערות</th></tr>
+  <tr><td>B28 / n28 (700)</td><td>LTE, 5G</td><td class="num">758 – 803</td><td class="num">703 – 748</td><td>כיסוי רחב ותוך-מבני. ה-5G בפס הזה (n28) אצל חלק מהמפעילים.</td></tr>
+  <tr><td>B5 (850)</td><td>LTE (לשעבר 3G)</td><td class="num">869 – 894</td><td class="num">824 – 849</td><td></td></tr>
+  <tr><td>B8 (900)</td><td>LTE / GSM (בסגירה)</td><td class="num">925 – 960</td><td class="num">880 – 915</td><td>שאריות GSM עשויות להופיע עד סיום הכיבוי.</td></tr>
+  <tr><td>B32 (1500 L-band)</td><td>LTE (Downlink בלבד)</td><td class="num">1452 – 1496</td><td class="num">—</td><td>משמש כ-Carrier Aggregation. אין לו Uplink.</td></tr>
+  <tr><td>B3 (1800)</td><td>LTE</td><td class="num">1805 – 1880</td><td class="num">1710 – 1785</td><td>הפס העיקרי של LTE בישראל.</td></tr>
+  <tr><td>B1 (2100)</td><td>LTE (לשעבר 3G)</td><td class="num">2110 – 2170</td><td class="num">1920 – 1980</td><td></td></tr>
+  <tr><td>B7 (2600)</td><td>LTE</td><td class="num">2620 – 2690</td><td class="num">2500 – 2570</td><td>קיבולת בערים.</td></tr>
+  <tr><td>n78 (3.5 GHz)</td><td>5G NR, TDD</td><td class="num">3300 – 3800</td><td class="num">אותו פס (TDD)</td><td>האות מתפרץ (TDD), ולכן חובה Max Hold.</td></tr>
+</table>
+<div class="box"><b class="t">שימו לב</b>הפסים והחלוקה בין המפעילים משתנים עם השנים. הטבלה מבוססת על מקורות פתוחים מסוף 2026. את השיוך המדויק של ערוץ למפעיל מאמתים מול המפעיל או מול טלפון במצב Field Test.</div>
+<p class="src">Sources: frequencycheck.com/countries/israel · kimovil.com/en/frequency-checker/IL · Israel Ministry of Communications 2G/3G shutdown notice (gov.il, July 2025)</p>
+
+<h2>5. חיבור והפעלה ראשונה</h2>
+<ol>
+  <li>מחברים את האנטנה ל-<b>RX1</b> של ה-bladeRF.</li>
+  <li>מחברים את הכרטיס לטלפון בכבל OTG (או דרך hub מוזן).</li>
+  <li>Android שואל אם לפתוח את <b>bladeRF Mobile</b>. מסמנים "תמיד" ומאשרים. האישור הזה הוא גם הרשאת ה-USB.</li>
+  <li>הצ'יפ למעלה מתחלף ל-<span class="k">● bladeRF מחובר · RX1</span> בירוק. אם כתוב <span class="k">סימולטור</span> בכתום, הכרטיס לא מחובר: לוחצים על הצ'יפ ואז על <span class="k">bladeRF</span>.</li>
+  <li>ב-<span class="k">רדיו</span> בודקים את <b>חיבור USB</b>. ב-USB 2 האפליקציה מגבילה בעצמה את קצב הדגימה ל-10 MS/s, כדי למנוע ניתוקים.</li>
+</ol>
+<div class="fig"><img src="img/spectrum_land.jpg"><div class="cap">מסך הספקטרום לרוחב: פריסטים למעלה, מקשים בצד, ספקטרום ו-Waterfall</div></div>
+
+<h2>6. הגדרות מומלצות למדידת סלולר</h2>
+<table>
+  <tr><th style="width:24%">הגדרה</th><th style="width:26%">ערך מומלץ</th><th>למה</th></tr>
+  <tr><td>תחום (Span)</td><td>פריסט של הפס, למשל <span class="k">B3 DL 1800</span></td><td>מכסה את כל ה-Downlink של הפס, כל המפעילים יחד. כדי לבדוק ערוץ אחד עושים עליו זום בצביטה.</td></tr>
+  <tr><td>RBW</td><td>אוטומטי, או 30–100 kHz</td><td>מספיק להבחין בגבולות של ערוצי LTE. RBW צר יותר מאט את הסריקה בלי להוסיף מידע.</td></tr>
+  <tr><td>עקומות</td><td>עקומה 1: Live, עקומה 2: Max Hold</td><td>LTE משדר ברציפות, אבל 5G TDD (n78) והעומס משתנים כל הזמן. Max Hold מראה את התמונה המלאה.</td></tr>
+  <tr><td>גלאי (Detector)</td><td>Peak לזיהוי, Average לרמות</td><td>Peak תופס את הקצוות של ערוץ מתפרץ. Average נותן רמה יציבה. ההספק בפס מחושב תמיד מעקומת ההספק הממוצע, לא מהתמונה.</td></tr>
+  <tr><td>Gain</td><td>מתחילים ב-30 dB</td><td>מעלים עד שרצפת הרעש כבר לא יורדת. אם מופיע <span class="k">עומס יתר בכניסה</span>, מורידים 6–10 dB.</td></tr>
+  <tr><td>Ref level</td><td><span class="k">כיול סקלה אוטומטי</span></td><td>מציב את הערוץ החזק קרוב לראש המסך.</td></tr>
+</table>
+
+<h2>7. זיהוי ערוץ: מה רואים על המסך</h2>
+<ul>
+  <li><b>ערוץ LTE</b> נראה כ"שולחן" שטוח ברוחב קבוע. ברוחב 20 MHz החלק התפוס הוא כ-18 MHz, ב-10 MHz כ-9 MHz, וב-5 MHz כ-4.5 MHz. 5G NR רחב יותר (n78: עד 100 MHz).</li>
+  <li><b>לחיצה ארוכה על ערוץ</b> מפעילה את המזהה של תוכנת המחשב. הוא מציג את הטכנולוגיה המשוערת (LTE / LTE או 5G NR / GSM…), את הרוחב התפוס, את הרמה ואת שם הפס.</li>
+  <li><b><span class="k">אותות</span></b> מציג את כל הערוצים הבולטים בתחום, עם רוחב, טכנולוגיה ופס. נגיעה בשורה עושה זום לערוץ ומציבה עליו מרקר.</li>
+  <li><b>Downlink מול Uplink:</b> ב-DL רואים שולחנות יציבים, כי האתר משדר כל הזמן. ב-UL רואים פרצים חלשים, ורק כשיש טלפונים פעילים קרוב.</li>
+  <li><b>פס תוכנית התדרים</b> מעל הגרף מראה באיזה פס נמצאים, וליד כל מרקר מופיע שם הפס.</li>
+</ul>
+
+<h2>8. מדידת עוצמה: הספק בפס והערכת RSRP</h2>
+<p><b>הספק בפס (Band power)</b> הוא סך ההספק בתחום התדרים שבחרתם. כדי למדוד ערוץ אחד:</p>
+<ol>
+  <li>עושים זום כך שהערוץ ממלא את המסך, למשל <bdi dir="ltr">1805–1825 MHz</bdi>.</li>
+  <li>במפה: <span class="k">⚙︎</span> ← <span class="k">צביעת נקודות לפי</span> ← <span class="k">הספק בפס</span> ← <span class="k">לפי התצוגה הנוכחית</span>. מעכשיו כל נקודה נמדדת בדיוק על הערוץ הזה.</li>
+</ol>
+<p><b>הערכת RSRP</b>, הערך שהטלפון מציג: RSRP הוא ההספק של תת-נושא אחד מתוך <bdi dir="ltr">12·N<sub>RB</sub></bdi>, ולכן בקירוב:</p>
+<table>
+  <tr><th>רוחב ערוץ LTE</th><th class="num">N<sub>RB</sub></th><th class="num">RSRP ≈ הספק בפס פחות</th></tr>
+  <tr><td class="num">5 MHz</td><td class="num">25</td><td class="num">24.8 dB</td></tr>
+  <tr><td class="num">10 MHz</td><td class="num">50</td><td class="num">27.8 dB</td></tr>
+  <tr><td class="num">15 MHz</td><td class="num">75</td><td class="num">29.5 dB</td></tr>
+  <tr><td class="num">20 MHz</td><td class="num">100</td><td class="num">30.8 dB</td></tr>
+</table>
+<div class="box"><b class="t">דוגמה</b>הספק בפס של <bdi dir="ltr">−55 dBm</bdi> על ערוץ של 20 MHz נותן RSRP של בערך <bdi dir="ltr">−55 − 30.8 ≈ −86 dBm</bdi>. החישוב נכון לערוץ עמוס במלואו. בערוץ שקט ההספק נמוך יותר וה-RSRP האמיתי גבוה מההערכה, בכמה dB. מוסיפים גם את הגבר האנטנה ואת הפסדי הכבל דרך <span class="k">תיקון כיול</span>.</div>
+
+<h2 class="pb">9. סקר שטח עם מפה</h2>
+<p>לשונית <span class="k">מפה</span> שומרת כל מדידה עם המיקום שבו היא נלקחה. <b>סקר</b> הוא ביקור אחד באתר: הנקודות שלו, המסלולים שלו ותמונת האזור.</p>
+<h3>א. הכנה</h3>
+<ol>
+  <li>מצלמים מסך של האזור מ-Google Maps (תצוגת לוויין) או מ-GovMap, או מכינים שרטוט של האתר.</li>
+  <li>במפה: <span class="k">📁</span> ← <span class="k">סקר חדש</span>, ואז <span class="k">⚙︎</span> ← <span class="k">העלאת שרטוט / תמונת לוויין…</span>.</li>
+  <li><b>כיול:</b> נוגעים בתמונה במקום שאפשר לזהות (פינת בניין, צומת), ומזינים את הקואורדינטות שלו. אפשר להדביק מ-Google Maps, למשל <bdi dir="ltr">32.0853, 34.7818</bdi>, או לעמוד על המקום וללחוץ <span class="k">השתמש במיקום הנוכחי שלי</span>. חוזרים על זה בנקודה שנייה, רחוקה מהראשונה. נקודה שלישית משפרת את הדיוק ומתקנת סיבוב ועיוות.</li>
+  <li>בוחרים מדד צבע: <span class="k">הספק בפס</span> (מומלץ) או <span class="k">רמת שיא</span>, ואת הפס שנמדד (פרק 8).</li>
+</ol>
+<div class="two">
+  <div class="fig"><img src="img/map_image.jpg"><div class="cap">נקודות ומסלול על תמונת אזור מכוילת. כחול = חלש, אדום = חזק</div></div>
+  <div class="fig"><img src="img/point.jpg"><div class="cap">נגיעה בנקודה פותחת את הניתוח שנשמר: JPEG, מיקום, הספק, שיא ואותות</div></div>
+</div>
+<h3>ב. שמירת נקודה</h3>
+<ul>
+  <li><span class="k">📍 שמירת נקודה</span> (במפה), או <span class="k">שמירת נקודה</span> במקשי הספקטרום. נותנים שם, או משאירים ריק לשם אוטומטי, ובוחרים סקר יעד.</li>
+  <li><span class="k">שמור</span> שומר את הנקודה בסקר: תמונת JPEG של הספקטרום עם המיקום, השעה וההגדרות, ואת נתוני הספקטרום המלאים.</li>
+  <li><span class="k">שמירה + העתק אל…</span> שומר את הנקודה וגם מעתיק את ה-JPEG ליעד שבוחרים בטלפון (Downloads, Drive וכו').</li>
+</ul>
+<div class="fig small"><img src="img/save_dialog.jpg"><div class="cap">חלון השמירה: שם (לא חובה), סקר יעד ומיקום</div></div>
+<h3>ג. הקלטת מסלול בזמן אמת ("טיול")</h3>
+<ul>
+  <li><span class="k">● הקלטת מסלול</span> מתחיל את ההקלטה. כל 2 שניות (ניתן לשינוי, וגם אפשר להגדיר מרחק מינימלי) נשמרת נקודה עם ה-Max Hold וההספק הממוצע מאז הנקודה הקודמת. כך גם פרץ קצר בין שתי נקודות לא הולך לאיבוד.</li>
+  <li>המסלול מצטייר על המפה בזמן ההליכה, וכל נקודה נצבעת לפי העוצמה. <span class="k">■ עצירת מסלול</span> מסיים.</li>
+  <li>נגיעה בכל נקודה במסלול מציגה את הספקטרום שנמדד שם. <span class="k">פתיחה באנלייזר</span> מחזיר את האנלייזר לאותו תחום.</li>
+</ul>
+<h3>ד. ייצוא</h3>
+<ul>
+  <li><span class="k">ייצוא (KML + CSV)</span>: קובץ KML נפתח ב-Google Earth, עם הנקודות, המסלולים והתמונות. קובץ ה-CSV נפתח ב-Excel.</li>
+  <li><span class="k">מפה כ-JPEG</span>: תמונה של המפה עם מקרא הצבעים, מוכנה לדו"ח.</li>
+</ul>
+
+<h2>10. עבודה בלי כרטיס: סימולטור</h2>
+<ul>
+  <li>לאפליקציה יש שני אייקונים: <b>bladeRF Mobile</b> (רגיל) ו-<b>bladeRF Simulator</b>. השני נפתח ישר על סצנת RF מדומה ולא נוגע ברדיו. הוא טוב להדרכה, להדגמה ולתרגול.</li>
+  <li>הצ'יפ העליון מראה תמיד מאיפה מגיעים הנתונים: <span class="k">● bladeRF מחובר</span> (ירוק), <span class="k">סימולטור</span> (כתום) או <span class="k">מנותק</span> (אדום). על הגרף עצמו מופיע הכיתוב <b>SIMULATOR</b>.</li>
+  <li><span class="k">GPS מדומה</span> (במסך הגדרות המפה) מזיז מיקום מדומה במעגל, כדי לתרגל סקר בתוך מבנה. נקודה שנשמרה עם סימולטור או GPS מדומה מסומנת <b>נתונים מדומים</b>, במסגרת כתומה מקווקוות, כדי שאף פעם לא יתבלבלו בינה לבין מדידה אמיתית.</li>
+</ul>
+
+<h2>11. פתרון תקלות</h2>
+<table>
+  <tr><th style="width:32%">תקלה</th><th>מה לעשות</th></tr>
+  <tr><td>הכרטיס לא מזוהה / "No bladeRF on USB"</td><td>בודקים שהכבל הוא OTG ומעביר נתונים. מנסים hub מוזן. מוודאים שאישרתם את הרשאת ה-USB. לוחצים <span class="k">רדיו</span> ← <span class="k">bladeRF</span>.</td></tr>
+  <tr><td>"The FPGA image needs loading"</td><td>טוענים את <bdi dir="ltr">hostedxA4.rbf</bdi> דרך <span class="k">רדיו</span> (פרק 1).</td></tr>
+  <tr><td>ניתוקים או Timeout באמצע סריקה</td><td>מורידים את <span class="k">RBW</span> ← <span class="k">קצב דגימה מרבי</span> ל-10 MS/s. בודקים את אספקת החשמל.</td></tr>
+  <tr><td>אין מיקום / "מחכה ל-GPS"</td><td>יוצאים לשטח פתוח ומחכים 30–60 שניות. בודקים שה-GPS דולק ושהרשאת המיקום אושרה. בתוך מבנה משתמשים ב-<span class="k">✋ מיקום ידני</span>.</td></tr>
+  <tr><td>עומס יתר בכניסה / רמות מוזרות</td><td>מורידים Gain. אם האנטנה ממש ליד אתר, מתרחקים.</td></tr>
+  <tr><td>הנקודות לא מופיעות על התמונה</td><td>התמונה לא כוילה: <span class="k">⚙︎</span> ← <span class="k">כיול מיקום</span>, עם לפחות 2 נקודות.</td></tr>
+  <tr><td>מפת הרחובות לא נטענת</td><td>היא צריכה אינטרנט. תמונת האזור והרשת עובדות גם בלי.</td></tr>
+</table>
+
+<h2>12. צ'קליסט לפני יציאה לשטח</h2>
+<ul class="check">
+  <li>טלפון ו-Power bank טעונים, וה-bladeRF עולה בבדיקה בבית (צ'יפ ירוק).</li>
+  <li>אנטנה רחבת פס מחוברת ל-RX1.</li>
+  <li>קובץ FPGA נטען, אם הכרטיס צריך אותו.</li>
+  <li>סקר חדש עם שם האתר, תמונת לוויין מועלית ומכוילת ב-2–3 נקודות.</li>
+  <li>פריסט הפס הנמדד נבחר, ומדד "הספק בפס" מוגדר על הערוץ.</li>
+  <li>Gain מכוון (בלי עומס יתר), ו-Max Hold פעיל.</li>
+  <li>GPS דולק, הרשאת מיקום אושרה, ובצ'יפ מופיע דיוק של פחות מ-15 m.</li>
+  <li>ה-GPS המדומה <b>כבוי</b>, והצ'יפ העליון <b>לא</b> כתום.</li>
+  <li>בסוף: <span class="k">ייצוא (KML + CSV)</span> ו-<span class="k">מפה כ-JPEG</span>.</li>
+</ul>
+
+</body>
+</html>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- bladeRF 2.0 micro (Nuand VID 0x2cf0, PID 0x5250) -->
+    <usb-device vendor-id="11504" product-id="21072" />
+    <!-- bladeRF x40/x115 (0x2cf0:0x5246) -->
+    <usb-device vendor-id="11504" product-id="21062" />
+    <!-- bladeRF with legacy firmware (0x1d50:0x6066) -->
+    <usb-device vendor-id="7504" product-id="24678" />
+</resources>
