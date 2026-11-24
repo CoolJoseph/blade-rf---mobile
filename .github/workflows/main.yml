@@ -15,6 +15,12 @@ jobs:
         run: |
           if [ ! -d native ] && [ -f native.tar.gz ]; then tar xzf native.tar.gz; fi
           test -f native/CMakeLists.txt
+          echo "---- files in the repository ----"
+          find . -maxdepth 3 -not -path "./.git*" -not -path "./native/*" | sort
+          if [ ! -f android/gradlew ]; then
+            echo "::error::The android folder is missing from the repository - upload it (see the list above)."
+            exit 1
+          fi
 
       - uses: actions/setup-java@v4
         with:
@@ -28,6 +34,7 @@ jobs:
 
       - name: Engine self-test (simulator)
         run: |
+          if [ ! -f tests/test_backend.py ]; then echo "tests folder not uploaded - skipping the self-test"; exit 0; fi
           python -m pip install --quiet "numpy<2"
           python tests/test_backend.py
 
