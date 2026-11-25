@@ -48,7 +48,10 @@ for _b in (("LTE B5 UL", 824e6, 849e6, "850 MHz"),
     if not any(x[0] == _b[0] for x in wb.BAND_PLAN):
         wb.BAND_PLAN.append(_b)
 
-APP_VERSION = "1.1"
+APP_VERSION = "1.2"
+DESKTOP = False          # set by the Windows launcher (desktop edition)
+NATIVE_LOG = [""]        # Android: libbladeRF/libusb messages land in this file
+LAST_SEEN = [0.0]        # time of the UI's last request (desktop: close detection)
 
 # The radio's reach. Desktop: 70 MHz - 6 GHz (bladeRF 2.0 micro).
 F_MIN, F_MAX = 70e6, 6000e6
@@ -264,15 +267,56 @@ class Controller:
             except Exception as exc:
                 self._radio_error = str(exc)
 
+    def _fpga_file(self):
+        d = os.environ.get("BLADERF_SEARCH_DIR", "")
+        p = os.path.join(d, "hostedxA4.rbf") if d else ""
+        return p if p and os.path.isfile(p) else ""
+
+    def _lib_warnings_on(self):
+        """The engine sets libbladeRF to 'errors only'. On the phone the
+        warnings are the useful part ("FPGA bitstream file not found"), so
+        let them through to native.log (see start_server)."""
+        try:
+            lib = wb.load_libbladerf(self.lib_path or None)
+            if not getattr(lib, "_mobile_verbosity", False):
+                real = lib.bladerf_log_set_verbosity
+                lib.bladerf_log_set_verbosity = lambda lvl: real(min(int(lvl), 3))
+                lib._mobile_verbosity = True
+        except Exception:
+            pass
+
     def _open_source(self, want_radio: bool):
         if want_radio and not self.force_sim:
-            try:
-                src = wb.BladeRF(channel=int(self.settings.get("port", 0)) % 2,
-                                 lib_path=self.lib_path or None)
-                self._radio_error = ""
-                return src
-            except Exception as exc:
-                self._radio_error = str(exc)
+            if NATIVE_LOG[0]:
+                self._lib_warnings_on()
+            last = None
+            for attempt in range(3):
+                try:
+                    src = wb.BladeRF(channel=int(self.settings.get("port", 0)) % 2,
+                                     lib_path=self.lib_path or None)
+                    self._radio_error = ""
+                    return src
+                except Exception as exc:
+                    last = exc
+                    # A board that has only just been granted / powered up can
+                    # miss the first USB requests (-6 timed out). Try again
+                    # before giving up; any other error is final.
+                    if "timed out" not in str(exc).lower() and "(-6)" not in str(exc):
+                        break
+                    time.sleep(1.5)
+            if last is not None:
+                exc = last
+                msg = str(exc)
+                if "(-6)" in msg or "timed out" in msg.lower():
+                    msg += ("\n\nThe board answered over USB but stopped responding. "
+                            "Most often this is POWER: a phone port cannot feed the "
+                            "bladeRF 2.0 -- use a powered USB hub / Y-cable or the "
+                            "board's DC input. Also try another OTG cable.")
+                if not self._fpga_file() and self.usb_fd >= 0:
+                    msg += ("\n\nNo FPGA image (hostedxA4.rbf) on the phone. If the board "
+                            "does not load its FPGA from flash, it cannot start: "
+                            "Radio -> Load hostedxA4.rbf.")
+                self._radio_error = msg
         return wb.Simulated(channel=int(self.settings.get("port", 0)) % 2)
 
     def start(self, want_radio=True):
@@ -508,6 +552,8 @@ class Controller:
                 "stalled": self._stalled,
                 "usb_fd": self.usb_fd,
                 "max_fs": self._cfg().max_fs,
+                "fpga_file": self._fpga_file(),
+                "native_log": _tail(NATIVE_LOG[0]),
             },
             "message": msg,
             "rbw_now": float(r.rbw) if r is not None else 0.0,
@@ -522,6 +568,7 @@ class Controller:
                 k: self.track[k] for k in ("sid", "id", "n", "status", "started")},
             "force_sim": self.force_sim,
             "files_dir": self.files_dir,
+            "desktop": DESKTOP,
         }
 
     def frame(self, since: int):
@@ -1024,6 +1071,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.rfile.read(n) if n else b""
 
     def do_GET(self):
+        LAST_SEEN[0] = time.time()
         u = urlparse(self.path)
         q = parse_qs(u.query)
         c = self.ctl
@@ -1073,6 +1121,7 @@ class Handler(BaseHTTPRequestHandler):
     do_HEAD = do_GET
 
     def do_POST(self):
+        LAST_SEEN[0] = time.time()
         u = urlparse(self.path)
         q = parse_qs(u.query)
         c = self.ctl
@@ -1133,6 +1182,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "n": n, "presets": c.presets})
             if op == "csv":
                 return self._json(c.save_csv())
+            if op == "desktop":
+                return self._json(desktop_op(c, d))
             if op == "location":
                 c.set_location(d.get("lat"), d.get("lon"), d.get("acc"),
                                d.get("alt"), d.get("src", "browser"))
@@ -1174,6 +1225,114 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(200, data, self._TYPES.get(ext, "application/octet-stream"))
 
 
+# ============================================================================
+#  Desktop edition: what Kotlin does on the phone, done with the PC's own
+#  dialogs (tkinter, part of every python.org install) and Explorer.
+# ============================================================================
+
+_DLG_LOCK = threading.Lock()
+
+
+def _tk_dialog(kind, **kw):
+    """Run one native file dialog, on top of the app window. Returns a path or ''."""
+    import tkinter as tk
+    from tkinter import filedialog
+    with _DLG_LOCK:
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            root.attributes("-topmost", True)
+        except Exception:
+            pass
+        try:
+            if kind == "save":
+                return filedialog.asksaveasfilename(parent=root, **kw) or ""
+            return filedialog.askopenfilename(parent=root, **kw) or ""
+        finally:
+            root.destroy()
+
+
+def _reveal(path):
+    import subprocess
+    if sys.platform.startswith("win"):
+        if os.path.isfile(path):
+            subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+        else:
+            os.startfile(path if os.path.isdir(path) else os.path.dirname(path))  # noqa
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", "-R", path])
+    else:
+        subprocess.Popen(["xdg-open", os.path.dirname(path) if os.path.isfile(path) else path])
+
+
+def _keep_awake(on: bool):
+    """Windows: keep the PC from sleeping while measuring (like keep-screen-on)."""
+    if not sys.platform.startswith("win"):
+        return
+    import ctypes
+    ES_CONTINUOUS, ES_SYSTEM, ES_DISPLAY = 0x80000000, 0x1, 0x2
+    flags = ES_CONTINUOUS | (ES_SYSTEM | ES_DISPLAY if on else 0)
+    ctypes.windll.kernel32.SetThreadExecutionState(flags)
+
+
+def desktop_op(c, d):
+    op = d.get("op")
+    try:
+        if op == "saveas":
+            src = d.get("path", "")
+            if not os.path.isfile(src):
+                return {"ok": False, "error": "file not found"}
+            name = d.get("name") or os.path.basename(src)
+            ext = os.path.splitext(name)[1] or os.path.splitext(src)[1]
+            dst = _tk_dialog("save", initialfile=name, defaultextension=ext,
+                             initialdir=os.path.expanduser("~/Documents"),
+                             filetypes=[(ext.upper().strip(".") or "file", "*" + ext),
+                                        ("All files", "*.*")])
+            if not dst:
+                return {"ok": False, "cancelled": True}
+            import shutil
+            shutil.copyfile(src, dst)
+            return {"ok": True, "path": dst}
+        if op == "reveal":
+            _reveal(d.get("path") or c.capture_dir)
+            return {"ok": True}
+        if op == "pick_fpga":
+            p = _tk_dialog("open", title="hostedxA4.rbf",
+                           filetypes=[("FPGA image", "*.rbf"), ("All files", "*.*")])
+            if not p:
+                return {"ok": False, "cancelled": True}
+            import shutil
+            dst_dir = os.environ.get("BLADERF_SEARCH_DIR") or os.path.join(c.files_dir, "fpga")
+            os.makedirs(dst_dir, exist_ok=True)
+            shutil.copyfile(p, os.path.join(dst_dir, "hostedxA4.rbf"))
+            return {"ok": True, "path": p}
+        if op == "pick_presets":
+            p = _tk_dialog("open", filetypes=[("Presets", "*.json"), ("All files", "*.*")])
+            if not p:
+                return {"ok": False, "cancelled": True}
+            with open(p, encoding="utf-8") as f:
+                return {"ok": True, "text": f.read()}
+        if op == "keep_awake":
+            _keep_awake(bool(d.get("on")))
+            return {"ok": True}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": False, "error": "unknown op"}
+
+
+def _tail(path, n=14):
+    if not path or not os.path.isfile(path):
+        return ""
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - 6000))
+            lines = f.read().decode("utf-8", "replace").splitlines()
+        return "\n".join(lines[-n:])
+    except Exception:
+        return ""
+
+
 class _Server(ThreadingHTTPServer):
     daemon_threads = True
 
@@ -1209,6 +1368,15 @@ def start_server(files_dir: str, web_root: str, port: int = 0,
     # libbladeRF looks here for hostedxA4.rbf when the board's flash does
     # not autoload an FPGA image.
     os.environ["BLADERF_SEARCH_DIR"] = fpga_dir
+    if "ANDROID_ROOT" in os.environ and not NATIVE_LOG[0]:
+        # libbladeRF and libusb write to the C stderr, which on a phone goes
+        # nowhere. Point it at a file the Radio panel shows.
+        try:
+            NATIVE_LOG[0] = os.path.join(files_dir, "native.log")
+            fd = os.open(NATIVE_LOG[0], os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+            os.dup2(fd, 2)
+        except OSError:
+            NATIVE_LOG[0] = ""
     if lib_path:
         os.environ["BLADERF_LIB"] = lib_path
     ctl = Controller(files_dir, lib_path=lib_path, force_sim=force_sim)
