@@ -1,4 +1,7 @@
-name: Build APK
+# Builds the APK in GitHub's cloud -- no Android Studio and no access to
+# Maven Central needed on your own network. Runs on every push and from the
+# Actions tab ("Run workflow"). The APK appears under the run's Artifacts.
+name: Build APK + Desktop
 
 on:
   push:
@@ -11,6 +14,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The libbladeRF + libusb sources travel as one archive, so the whole
+      # project fits in a single drag-and-drop upload on github.com.
       - name: Unpack native sources
         run: |
           if [ ! -d native ] && [ -f native.tar.gz ]; then tar xzf native.tar.gz; fi
@@ -22,6 +27,8 @@ jobs:
             exit 1
           fi
 
+      # bionic (Android's C library) has no pthread_cancel; harmless if the
+      # archive already carries this fix
       - name: Android fix for libbladeRF
         run: |
           sed -i 's|define THREAD_CANCEL(m) pthread_cancel(m)|define THREAD_CANCEL(m) ((void)(m))|' native/bladeRF/host/common/include/thread.h
@@ -32,6 +39,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # Chaquopy runs pip with the same Python version the app embeds
       - uses: actions/setup-python@v5
         id: py
         with:
@@ -42,6 +50,24 @@ jobs:
           if [ ! -f tests/test_backend.py ]; then echo "tests folder not uploaded - skipping the self-test"; exit 0; fi
           python -m pip install --quiet "numpy<2"
           python tests/test_backend.py
+
+      # The FPGA image goes inside the APK, so a board that does not load its
+      # FPGA from flash still starts on the phone. Nuand publishes it.
+      - name: Bundle the bladeRF FPGA image (hostedxA4.rbf)
+        continue-on-error: true
+        run: |
+          mkdir -p android/app/src/main/assets/fpga
+          for u in https://www.nuand.com/fpga/hostedxA4-latest.rbf \
+                   https://www.nuand.com/fpga/v0.16.0/hostedxA4.rbf \
+                   https://www.nuand.com/fpga/v0.15.3/hostedxA4.rbf \
+                   https://nuand.com/fpga/hostedxA4-latest.rbf; do
+            if curl -fsSL --retry 2 -o /tmp/fpga.rbf "$u" && [ "$(stat -c%s /tmp/fpga.rbf)" -gt 1000000 ]; then
+              mv /tmp/fpga.rbf android/app/src/main/assets/fpga/hostedxA4.rbf
+              echo "FPGA image from $u: $(stat -c%s android/app/src/main/assets/fpga/hostedxA4.rbf) bytes"
+              break
+            fi
+          done
+          ls -la android/app/src/main/assets/fpga
 
       - name: Build debug APK
         working-directory: android
@@ -56,4 +82,48 @@ jobs:
         with:
           name: bladeRF-Mobile-apk
           path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+  # --------------------------------------------------------------------------
+  # Desktop edition: one Windows .exe, no Python needed on the PC.
+  # --------------------------------------------------------------------------
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          architecture: x64
+
+      - name: Build bladeRF Workbench.exe
+        shell: pwsh
+        run: |
+          python -m pip install --quiet "numpy<2" pyinstaller
+          python -m PyInstaller --noconfirm --onefile --windowed --name "bladeRF Workbench" `
+            --add-data "android/app/src/main/python;engine" `
+            --add-data "android/app/src/main/assets/webui;webui" `
+            --exclude-module PyQt5 --exclude-module pyqtgraph `
+            desktop/bladeRF_Workbench_Desktop.py
+
+      - name: Smoke test (simulator, no window)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist/bladeRF Workbench.exe" -ArgumentList "--sim","--no-window" -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 40 -and -not $ok; $i++) {
+            Start-Sleep -Seconds 2
+            try { $r = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:18765/api/state; $ok = $r.StatusCode -eq 200 } catch { }
+          }
+          $f = Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:18765/api/frame?since=-1"
+          Stop-Process -Id $p.Id -Force
+          if (-not $ok -or $f.StatusCode -ne 200) { Get-Content "$env:USERPROFILE\Documents\bladeRF Workbench\log.txt" -ErrorAction SilentlyContinue; throw "desktop app did not start" }
+          "desktop app answered: frame $($f.RawContentLength) bytes"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bladeRF-Workbench-Desktop-Windows
+          path: dist/bladeRF Workbench.exe
           if-no-files-found: error
