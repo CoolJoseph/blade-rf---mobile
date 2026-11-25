@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#07090b">
+<title>bladeRF Workbench Mobile</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div id="tabs" class="tabs">
+      <button id="tab-spec" class="tab on" data-i18n="tab_spec">Spectrum</button>
+      <button id="tab-map" class="tab" data-i18n="tab_map">Map</button>
+    </div>
+    <button id="b-source" class="chip src" data-i18n-title="tip_source"><span class="dot"></span><span id="src-label">…</span></button>
+    <div id="readouts">
+      <button class="ro" data-panel="freq"><span data-i18n="center">Center</span> <b id="ro-center" dir="ltr">—</b></button>
+      <button class="ro" data-panel="freq"><span data-i18n="span">Span</span> <b id="ro-span" dir="ltr">—</b></button>
+      <button class="ro" data-panel="bw"><span>RBW</span> <b id="ro-rbw" dir="ltr">—</b></button>
+    </div>
+    <div class="tb-right">
+      <button id="b-run" class="tbtn run" data-i18n-title="tip_run">▶</button>
+      <button id="b-lang" class="tbtn" title="עברית / English">עב</button>
+      <button id="b-rot" class="tbtn" data-i18n-title="tip_rotate">⟳</button>
+    </div>
+  </header>
+
+  <div id="presetbar"></div>
+
+  <main id="main">
+    <section id="plots">
+      <div id="spec-wrap">
+        <canvas id="spec"></canvas>
+        <div id="mk-readout"></div>
+        <div id="banner" class="hidden"></div>
+        <div id="hint" class="hidden"></div>
+      </div>
+      <div id="wf-wrap"><canvas id="wf"></canvas></div>
+    </section>
+
+    <aside id="keys">
+      <div class="kblock"><div class="kcap" data-i18n="blk_freq">Frequency</div>
+        <div class="kgrid">
+          <button class="key tune" data-panel="freq" data-i18n="k_freq">Freq</button>
+          <button class="key tune" data-panel="presets" data-i18n="k_presets">Presets</button>
+          <button class="key view" data-panel="bw" data-i18n="k_bw">RBW</button>
+        </div></div>
+      <div class="kblock"><div class="kcap" data-i18n="blk_ampl">Amplitude</div>
+        <div class="kgrid">
+          <button class="key view" data-panel="ampl" data-i18n="k_ampl">AMPTD</button>
+          <button class="key view" data-panel="traces" data-i18n="k_traces">Traces</button>
+          <button class="key view" data-panel="display" data-i18n="k_display">Display</button>
+        </div></div>
+      <div class="kblock"><div class="kcap" data-i18n="blk_analysis">Analysis</div>
+        <div class="kgrid">
+          <button class="key meas" data-panel="markers" data-i18n="k_markers">Markers</button>
+          <button class="key meas" data-act="peak" data-i18n="k_peak">Peak</button>
+          <button class="key meas" data-panel="signals" data-i18n="k_signals">Signals</button>
+          <button class="key meas" data-act="single" id="k-single" data-i18n="k_single">Single</button>
+          <button class="key meas" data-act="restart" data-i18n="k_restart">Restart</button>
+          <button class="key meas" data-act="next" data-i18n="k_next">Next Pk</button>
+        </div></div>
+      <div class="kblock"><div class="kcap" data-i18n="blk_system">System</div>
+        <div class="kgrid">
+          <button class="key radio" data-panel="radio" data-i18n="k_radio">Radio</button>
+          <button class="key file" data-panel="capture" data-i18n="k_capture">Capture</button>
+          <button class="key file" data-panel="settings" data-i18n="k_settings">Settings</button>
+          <button class="key meas" data-act="savept" data-i18n="k_savept">Save Pt</button>
+        </div></div>
+    </aside>
+  </main>
+
+  <section id="mapview" class="hidden">
+    <div id="map-wrap">
+      <canvas id="map"></canvas>
+      <div class="mtop">
+        <button id="m-survey" class="mchip">📁 <span id="m-survey-name">…</span></button>
+        <span class="grow"></span>
+        <span id="m-gps" class="mchip gps">GPS</span>
+        <button id="m-layers" class="mchip">⚙︎</button>
+      </div>
+      <div id="m-banner" class="hidden"></div>
+      <div id="m-legend"></div>
+      <div class="mbtns">
+        <button id="m-save" class="mbtn prim">📍 <span data-i18n="m_save">Save point</span></button>
+        <button id="m-track" class="mbtn rec">● <span data-i18n="m_track">Record walk</span></button>
+        <button id="m-place" class="mbtn" data-i18n="m_place">✋ Place by hand</button>
+        <button id="m-me" class="mbtn round">◎</button>
+      </div>
+    </div>
+    <div id="mini-wrap"><canvas id="mini"></canvas><div id="mini-ro"></div></div>
+  </section>
+
+  <footer id="status">
+    <span id="st-flags"></span>
+    <span id="st-msg"></span>
+    <span id="st-rate"></span>
+  </footer>
+
+  <div id="sheet" class="hidden">
+    <div class="sheet-head"><span id="sheet-title"></span><button id="sheet-close" class="tbtn">✕</button></div>
+    <div id="sheet-body"></div>
+  </div>
+  <div id="modal" class="hidden"><div class="modal-box"><div id="modal-body"></div></div></div>
+  <div id="tip" class="hidden"></div>
+</div>
+<script src="i18n.js"></script>
+<script src="desktop.js"></script>
+<script src="app.js"></script>
+<script src="map.js"></script>
+</body>
+</html>
