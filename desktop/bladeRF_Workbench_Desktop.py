@@ -141,13 +141,17 @@ def main():
 
     proc = open_window(url, os.path.join(ddir, ".window"))
     t0 = time.time()
+    seen = getattr(mobile_app, "LAST_SEEN", None)
+    old_engine = seen is None               # older engine: follow the window only
+    if old_engine:
+        seen = [0.0]
     try:
         while True:
             time.sleep(1.0)
-            idle = time.time() - (mobile_app.LAST_SEEN[0] or t0)
-            if proc is not None and proc.poll() is not None and idle > 4:
+            idle = time.time() - (seen[0] or t0)
+            if proc is not None and proc.poll() is not None and (idle > 4 or old_engine):
                 break                       # app window closed
-            if idle > (90 if mobile_app.LAST_SEEN[0] == 0 else 20):
+            if not old_engine and idle > (90 if seen[0] == 0 else 20):
                 break                       # browser tab closed (no polling)
     except KeyboardInterrupt:
         pass
