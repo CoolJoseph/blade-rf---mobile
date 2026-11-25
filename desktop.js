@@ -39,7 +39,7 @@ if (DESKTOP) {
 
   document.addEventListener('DOMContentLoaded', () => {
     document.body.classList.add('desktop');
-    document.title = 'bladeRF Workbench';
+    document.title = 'YT Spectrum Analyzer';
     const rot = document.getElementById('b-rot'); if (rot) rot.style.display = 'none';
     // right-click = the phone's long-press: identify the signal under the mouse
     const spec = document.getElementById('spec');
@@ -54,7 +54,7 @@ if (DESKTOP) {
     const k = e.key;
     const done = () => e.preventDefault();
     if (k === 'Escape') { window.onBack && window.onBack(); return done(); }
-    if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === 's') { window.mapSaveDialog && window.mapSaveDialog(); return done(); }
+    if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === 's') { recordDialog({}); return done(); }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (k === ' ') { document.getElementById('b-run').click(); return done(); }
     if (k === 'p' || k === 'P') { doAct('peak'); return done(); }
@@ -67,6 +67,9 @@ if (DESKTOP) {
     if (k === 'ArrowRight') { tune(S.view.c + S.view.s / 10, S.view.s, true); return done(); }
     if (k === '+' || k === '=') { tune(S.view.c, S.view.s / 2, true); return done(); }
     if (k === '-' || k === '_') { tune(S.view.c, S.view.s * 2, true); return done(); }
+    if (k === 'PageUp') { setGain(S.set.gain + 1); return done(); }
+    if (k === 'PageDown') { setGain(S.set.gain - 1); return done(); }
+    if (k === 'h' || k === 'H') { setScreen('home'); return done(); }
     if (k === 'ArrowUp') { S.ui.ref += 5; WF.key = ''; saveUi(); S.dirty = true; return done(); }
     if (k === 'ArrowDown') { S.ui.ref -= 5; WF.key = ''; saveUi(); S.dirty = true; return done(); }
   });

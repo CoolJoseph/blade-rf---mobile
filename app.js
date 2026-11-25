@@ -1,4 +1,4 @@
-/* bladeRF Workbench Mobile -- front end.
+/* YT Spectrum Analyzer -- front end (grew out of bladeRF Workbench Mobile).
  *
  * Talks to the Python back end on 127.0.0.1 (the desktop program's own
  * sweep engine). Everything here is presentation and touch handling; the
@@ -17,7 +17,7 @@ const RBW_LIST = [1e3, 3e3, 10e3, 30e3, 100e3, 300e3, 1e6, 3e6];
 const FS_LIST = [0, 5e6, 10e6, 20e6, 30.72e6, 40e6, 56e6];
 const PANEL_ACC = {freq: '--tune', presets: '--tune', bw: '--view', ampl: '--view', traces: '--view', display: '--view',
   markers: '--meas', signals: '--meas', radio: '--radio', capture: '--file', settings: '--file',
-  point: '--meas', surveys: '--file', mapset: '--file'};
+  point: '--meas', surveys: '--file', mapset: '--file', alerts: '--radio', rec: '--file'};
 
 // ------------------------------------------------------------------ state
 const S = {
@@ -88,11 +88,58 @@ async function api(op, body) {
 }
 async function getJSON(path) { const r = await fetch(path); return r.json(); }
 
-let toastTimer = 0;
-function toast(msg, ms = 2500) {
-  const e = $('st-msg'); e.textContent = msg; e.dataset.toast = '1';
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => { e.dataset.toast = ''; }, ms);
+// ================================================================ alerts
+// Small pills on the side of the screen instead of a status line nobody
+// reads. Colour says how much it matters: blue = something changed / done,
+// orange = worth knowing (overload, simulator, paused...), red = broken
+// (radio lost, nothing received, location refused). A condition stays up
+// while it lasts (plus a short hold, so a flickering one does not blink);
+// a notice fades by itself. Tap any pill for the full list and history.
+const AL = {active: new Map(), hist: [], seq: 0};
+const AL_HOLD = 3000;
+function alertSet(key, level, text, detail) {
+  const now = Date.now(), a = AL.active.get(key);
+  if (a && a.text === text && a.level === level) { a.seen = now; return; }
+  AL.active.set(key, {key, level, text, detail: detail || '', t: a ? a.t : now, seen: now, sticky: true});
+  if (!a || a.text !== text) AL.hist.unshift({level, text, detail: detail || '', t: now});
+  AL.hist.length = Math.min(AL.hist.length, 80);
+  renderAlerts();
 }
+function alertClear(key, now = Date.now()) {
+  const a = AL.active.get(key);
+  if (a && now - a.seen > AL_HOLD) { AL.active.delete(key); renderAlerts(); }
+}
+function notify(text, level = 'blue', ms = 3500, detail = '') {
+  const key = 'n' + (++AL.seq);
+  AL.active.set(key, {key, level, text, detail, t: Date.now(), seen: Date.now(), sticky: false});
+  AL.hist.unshift({level, text, detail, t: Date.now()}); AL.hist.length = Math.min(AL.hist.length, 80);
+  renderAlerts();
+  setTimeout(() => { AL.active.delete(key); renderAlerts(); }, ms);
+}
+function toast(msg, ms = 3500) { if (msg) notify(String(msg), 'blue', ms); }
+const AL_RANK = {red: 0, orange: 1, blue: 2};
+const AL_FRESH = 6000;     // a new alert shows in full this long, then folds into the badge
+let alSig = '';
+function renderAlerts() {
+  const box = $('alerts'); if (!box) return;
+  const now = Date.now();
+  const list = [...AL.active.values()].sort((a, b) => AL_RANK[a.level] - AL_RANK[b.level] || b.t - a.t);
+  const fresh = list.filter(a => !a.sticky || now - a.t < AL_FRESH).slice(0, 3);
+  const folded = list.filter(a => !fresh.includes(a));
+  const sig = fresh.map(a => a.key + a.text).join('|') + '#' + folded.map(a => a.level).join('');
+  if (S.panel === 'alerts') renderPanel();
+  if (sig === alSig) return;
+  alSig = sig;
+  box.textContent = '';
+  fresh.forEach((a) => box.append(h('button', {cls: 'al ' + a.level, onclick: () => openPanel('alerts')},
+    h('span', {cls: 'ic'}, a.level === 'red' ? '⛔' : a.level === 'orange' ? '⚠' : 'ℹ'), h('span', {cls: 'tx'}, a.text))));
+  if (folded.length) {
+    const worst = folded[0].level;
+    box.append(h('button', {cls: 'al badge ' + worst, title: folded.map(a => a.text).join('\n'), onclick: () => openPanel('alerts')},
+      h('span', {cls: 'ic'}, worst === 'red' ? '⛔' : worst === 'orange' ? '⚠' : 'ℹ'), h('span', null, String(folded.length))));
+  }
+}
+setInterval(renderAlerts, 1000);
 
 // ------------------------------------------------------------- settings io
 let setTimer = 0, pendingSet = {};
@@ -100,7 +147,7 @@ function pushSet(ch, now = false) {
   Object.assign(pendingSet, ch);
   Object.assign(S.set, ch);
   clearTimeout(setTimer);
-  const go = () => { setTimer = 0; const c = pendingSet; pendingSet = {}; api('set', c).catch(() => {}); };
+  const go = () => { setTimer = 0; const c = pendingSet; pendingSet = {}; S._setT = Date.now(); api('set', c).catch(() => {}).finally(() => { S._setT = Date.now(); }); };
   if (now) go(); else setTimer = setTimeout(go, 90);
 }
 let uiTimer = 0;
@@ -462,16 +509,21 @@ spec.addEventListener('pointermove', (e) => {
   if (!ptrs.has(e.pointerId) || !g) return;
   ptrs.set(e.pointerId, {x: e.offsetX, y: e.offsetY});
   const R = plotRect();
-  if (g.kind === 'tap' || g.kind === 'pan' || g.kind === 'ref') {
+  if (g.kind === 'tap' || g.kind === 'pan' || g.kind === 'ref' || g.kind === 'gain') {
     const dx = e.offsetX - g.x0, dy = e.offsetY - g.y0;
     if (g.kind === 'tap' && Math.hypot(dx, dy) > 8) {
       clearTimeout(g.lp);
-      g.kind = g.onAxis ? 'ref' : (S.ui.dragMarker ? 'mdrag' : 'pan');
+      // left axis: reference level. Mostly-vertical drag on the plot: gain
+      // (up = more). Mostly-sideways: frequency, as before.
+      g.kind = g.onAxis ? 'ref' : (S.ui.dragMarker ? 'mdrag' : (Math.abs(dy) > Math.abs(dx) * 1.3 ? 'gain' : 'pan'));
+      if (g.kind === 'gain') g.gain0 = S.set.gain;
       S.touching = true;
     }
     if (g.kind === 'pan') {
       const c = g.c0 - dx / R.w * g.s0;
       tune(c, g.s0);
+    } else if (g.kind === 'gain') {
+      setGain(g.gain0 - dy / 6);
     } else if (g.kind === 'ref') {
       const per = (N_DIV * S.ui.div) / R.h;
       S.ui.ref = Math.round((g.ref0 + dy * per) * 2) / 2; WF.key = ''; S.dirty = true; saveUi();
@@ -507,8 +559,18 @@ function endPtr(e) {
 }
 spec.addEventListener('pointerup', endPtr);
 spec.addEventListener('pointercancel', endPtr);
+let gainPopT = 0;
+function setGain(v) {
+  const src = S.st ? S.st.source : {gain_min: 0, gain_max: 60};
+  const gv = Math.round(Math.min(Math.max(v, src.gain_min), src.gain_max));
+  if (gv !== Math.round(S.set.gain)) pushSet({gain: gv});
+  const pop = $('gain-pop'); pop.textContent = `Gain ${gv} dB`; pop.classList.remove('hidden');
+  clearTimeout(gainPopT); gainPopT = setTimeout(() => pop.classList.add('hidden'), 1200);
+  if (S.panel === 'ampl') renderPanel();
+}
 spec.addEventListener('wheel', (e) => {     // desktop browser testing
   e.preventDefault();
+  if (e.shiftKey) { setGain(S.set.gain + (e.deltaY < 0 ? 1 : -1)); return; }
   const R = plotRect(), f = xf(e.offsetX, R), s = S.view.s * Math.pow(0.8, -Math.sign(e.deltaY));
   const frac = (e.offsetX - R.x) / R.w; tune(f - (frac - 0.5) * s, s);
 }, {passive: false});
@@ -590,17 +652,21 @@ function updateReadouts() {
 }
 function updateStatus() {
   updateReadouts();
-  const fr = S.fr, fl = $('st-flags'); fl.textContent = '';
-  const src = S.st ? S.st.source : null;
-  if (src && src.lost) fl.append(h('span', {cls: 'w'}, t('src_lost')));
-  if (fr && fr.h.overload) fl.append(h('span', {cls: 'w'}, t('st_overload')));
-  if (fr && src && src.radio && fr.h.peak_dbm != null && fr.h.peak_dbm > -10) fl.append(h('span', {cls: 'w'}, t('st_damage')));
-  if (fr && fr.h.fs_low) fl.append(h('span', {cls: 'a'}, t('st_fslow')));
-  if (fr && fr.h.cal_extrap && src && src.radio) fl.append(h('span', {cls: 'a'}, t('st_calx')));
-  if (S.set && !S.set.running) fl.append(h('span', {cls: 'a'}, t('st_held')));
+  const fr = S.fr, src = S.st ? S.st.source : null, now = Date.now();
+  const cond = (key, on, level, text, detail) => { if (on) alertSet(key, level, text, detail); else alertClear(key, now); };
+  cond('lost', src && src.lost, 'red', t('src_lost'), t('st_lost'));
+  cond('stall', src && src.stalled && !src.lost, 'red', t('al_stall'), src && src.stalled);
+  cond('rerr', src && src.error && !src.radio && !(S.st && S.st.force_sim), 'red', t('al_radio_err'), src && src.error);
+  cond('ovl', fr && fr.h.overload, 'orange', t('st_overload'), t('al_ovl_d'));
+  cond('dmg', fr && src && src.radio && fr.h.peak_dbm != null && fr.h.peak_dbm > -10, 'red', t('st_damage'), t('al_dmg_d'));
+  cond('fslow', fr && fr.h.fs_low, 'orange', t('st_fslow'));
+  cond('calx', fr && fr.h.cal_extrap && src && src.radio, 'orange', t('st_calx'));
+  cond('held', S.set && !S.set.running, 'orange', t('st_held'));
+  cond('sim', src && src.sim, 'orange', t('al_sim'), t('al_sim_d'));
   if (fr) $('st-rate').textContent = `${fr.h.rate.toFixed(fr.h.rate < 10 ? 1 : 0)} ${t('sweeps')} · ${fr.h.segments} ${t('seg')}`;
-  const msg = $('st-msg');
-  if (!msg.dataset.toast) msg.textContent = (S.st && S.st.message) || (src && src.stalled) || (src ? src.info : '');
+  const msg = S.st && S.st.message;
+  if (msg && msg !== S._lastMsg) { notify(msg, /disconnect|unplug|lost/i.test(msg) ? 'red' : 'blue', 5000); }
+  S._lastMsg = msg || '';
   const ban = $('banner');
   if (src && src.lost) { ban.textContent = t('st_lost'); ban.classList.remove('hidden'); } else ban.classList.add('hidden');
 }
@@ -609,7 +675,8 @@ function updateSourceChip() {
   chip.classList.toggle('radio', !!src.radio && !src.lost);
   chip.classList.toggle('sim', !!src.sim);
   chip.classList.toggle('lost', !!src.lost);
-  $('src-label').textContent = src.lost ? t('src_lost') : src.radio ? `${t('src_radio')} ${t('connected')} · RX${(S.set.port || 0) + 1}` : t('src_sim');
+  $('src-label').textContent = src.lost ? t('src_lost') : src.radio ? `bladeRF · RX${(S.set.port || 0) + 1}` : t('src_sim');
+  $('b-source').title = src.radio ? `${t('src_radio')} ${t('connected')}` : t('tip_source');
   const run = $('b-run');
   run.textContent = S.set.running ? '❚❚' : '▶'; run.classList.toggle('held', !S.set.running);
   $('k-single').classList.toggle('on', !S.set.running);
@@ -872,11 +939,12 @@ const PANELS = {
       AND && AND.pickFpga ? btn(t('fpga_load'), () => AND.pickFpga()) : null,
       h('div', {cls: 'note'}, t('fpga_note'))));
     b.append(box(t('about'), h('div', {cls: 'note ltr', style: 'white-space:pre-wrap'},
-      `bladeRF Workbench Mobile ${S.st.version}\nengine: ${S.st.core_version}`)));
+      `${S.st.app_name || 'YT Spectrum Analyzer'} ${S.st.version}\nengine: ${S.st.core_version}`)));
   },
 
   capture(b) {
     b.append(box(null, h('div', {cls: 'seg'},
+      btn('● ' + t('rec_title'), () => recordDialog({}), 'prim'),
       btn(t('shot'), screenshot, 'prim'),
       btn(t('csv'), async () => { const r = await api('csv'); if (r.ok) { toast(t('saved') + ': ' + r.csv.split('/').pop()); renderPanel(); } else toast(r.error || 'error'); }, 'prim'))));
     const list = h('div', {cls: 'list'}, h('div', {cls: 'note'}, '…'));
@@ -885,13 +953,26 @@ const PANELS = {
       list.textContent = '';
       if (!files.length) list.append(h('div', {cls: 'note'}, t('no_files')));
       for (const f of files.slice(0, 60)) {
-        list.append(h('div', {cls: 'li'}, h('div', {cls: 't'}, h('b', {cls: 'ltr'}, f.name), h('small', null, (f.size / 1024).toFixed(0) + ' kB')),
+        const ic = /\.(webm|mp4)$/i.test(f.name) ? '🎬 ' : /\.(jpe?g|png)$/i.test(f.name) ? '🖼 ' : /\.json$/i.test(f.name) ? '🧾 ' : '📄 ';
+        list.append(h('div', {cls: 'li'}, h('div', {cls: 't'}, h('b', {cls: 'ltr'}, ic + f.name), h('small', null, (f.size / 1024).toFixed(0) + ' kB')),
+          AND && AND.saveAs ? btn(t('copy_to'), () => AND.saveAs(f.path, f.name, mimeOf(f.name)), 'sm') : null,
           AND && AND.share ? btn(t('share'), () => shareFile(f.path), 'sm') : null));
       }
     });
   },
 
+  alerts(b) {
+    const act = [...AL.active.values()].sort((a, c) => AL_RANK[a.level] - AL_RANK[c.level]);
+    b.append(box(t('al_now'), act.length ? h('div', {cls: 'list'}, ...act.map(a => h('div', {cls: 'li al-li ' + a.level},
+      h('div', {cls: 't'}, h('b', null, a.text), a.detail ? h('small', {style: 'white-space:pre-wrap;display:block'}, a.detail) : null)))) :
+      h('div', {cls: 'note'}, t('al_none'))));
+    b.append(box(t('al_hist'), h('div', {cls: 'list'}, ...AL.hist.slice(0, 40).map(a => h('div', {cls: 'li al-li ' + a.level},
+      h('div', {cls: 't'}, h('b', null, a.text), h('small', null, new Date(a.t).toLocaleTimeString())))))));
+    b.append(box(null, h('div', {cls: 'note'}, t('al_legend'))));
+  },
+
   settings(b) {
+    if (typeof locStatusBox === 'function') b.append(locStatusBox());
     b.append(box(t('language'), h('div', {cls: 'seg'},
       btn('עברית', () => setLang('he'), 'sm' + (S.ui.lang === 'he' ? ' on' : '')),
       btn('English', () => setLang('en'), 'sm' + (S.ui.lang === 'en' ? ' on' : '')))));
@@ -1007,6 +1088,7 @@ window.onPresetsPicked = async (text) => {
 // ---------------------------------------------------------------- actions
 async function doAct(a) {
   if (a === 'savept') { if (window.mapSaveDialog) window.mapSaveDialog(); return; }
+  if (a === 'record') { recordDialog({}); return; }
   if (a === 'peak') { peakSearch(S.mAct); return; }
   if (a === 'next') { nextPeak(0); return; }
   if (a === 'restart') { await api('restart'); WF.key = ''; toast(t('k_restart')); return; }
@@ -1084,8 +1166,8 @@ function applyLayout() {
   requestAnimationFrame(() => {
     // the open panel never covers the soft keys: portrait sits above them,
     // landscape beside them
-    const keys = $('keys'), st = $('status');
-    document.body.style.setProperty('--kh', land ? '0px' : (keys.offsetHeight + st.offsetHeight) + 'px');
+    const keys = $('keys');
+    document.body.style.setProperty('--kh', land ? '0px' : keys.offsetHeight + 'px');
     document.body.style.setProperty('--kw', land ? keys.offsetWidth + 'px' : '0px');
     resizeCanvases();
   });
@@ -1097,6 +1179,7 @@ new ResizeObserver(() => resizeCanvases()).observe($('plots'));
 window.onBack = () => {
   if (!$('modal').classList.contains('hidden')) { $('modal').classList.add('hidden'); return true; }
   if (S.panel) { closePanel(); return true; }
+  if (typeof SCR !== 'undefined' && SCR.cur !== 'home') { setScreen('home'); return true; }
   return false;
 };
 // Kotlin -> page messages (USB permission, file import results)
@@ -1127,7 +1210,8 @@ async function pollState() {
   try {
     const st = await getJSON('/api/state');
     S.st = st;
-    if (!S.set || !Object.keys(pendingSet).length) S.set = st.settings;
+    // a state fetched while our own change was still on its way is stale
+    if (!S.set || (!Object.keys(pendingSet).length && Date.now() - (S._setT || 0) > 1200)) S.set = st.settings;
     if (JSON.stringify(st.presets) !== JSON.stringify(S.presets)) { S.presets = st.presets; renderPresetBar(); }
     updateSourceChip(); updateStatus();
   } catch (e) { /* server restarting */ }
@@ -1142,6 +1226,7 @@ async function boot() {
   try { S.bands = await getJSON('/api/bands'); } catch (e) { S.bands = []; }
   if (AND && AND.setOrientation) AND.setOrientation(S.ui.orient);
   if (AND && AND.keepScreenOn) AND.keepScreenOn(S.ui.keepOn !== false);
+  for (const id of ['ver', 'home-ver']) $(id).textContent = 'v' + st.version;
   applyLang(); applyLayout(); updateSourceChip(); updateStatus();
   requestAnimationFrame(frameLoopDraw);
   pump();

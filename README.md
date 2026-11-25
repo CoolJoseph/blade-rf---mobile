@@ -48,6 +48,27 @@
 - **USB 2 או USB 3:** רוב הטלפונים מחברים ב-USB 2. במצב אוטומטי האפליקציה מגבילה ל-10 MS/s ב-USB 2 ומאפשרת 40 MS/s ב-USB 3. אפשר לשנות את זה ב-**RBW → קצב דגימה מרבי**.
 - כשאין כרטיס מחובר, האפליקציה עובדת על הסימולטור של תוכנת המחשב.
 
+
+## גרסת מחשב (Windows)
+
+אותה אפליקציה, עם אותו מנוע, אותם מסכים ואותן פונקציות, בחלון משלה במחשב. היא מתחברת ל-bladeRF דרך הדרייבר של Nuand (`bladeRF.dll`), בדיוק כמו תוכנת המחשב המקורית.
+
+**התקנה (קובץ exe אחד, בלי Python):**
+1. מתקינים פעם אחת את הדרייבר של Nuand ל-Windows. אם התוכנה המקורית כבר עובדת במחשב, הוא כבר מותקן.
+2. ב-GitHub, בלשונית Actions, בריצה האחרונה, מורידים את `bladeRF-Workbench-Desktop-Windows` ומחלצים את `bladeRF Workbench.exe`.
+3. שמים את הקובץ בכל תיקייה, ופותחים בלחיצה כפולה. אם Windows SmartScreen מזהיר, לוחצים "More info" ואז "Run anyway".
+4. החלון נפתח בתוך כמה שניות. סגירת החלון סוגרת את התוכנה.
+
+**הבדלים מהטלפון:**
+- **עכבר:** גלגלת עושה זום, גרירה מזיזה את התדר, לחיצה מציבה מרקר, ו**לחיצה ימנית** מזהה אות (במקום לחיצה ארוכה).
+- **מקלדת:** רווח = הפעלה/הקפאה, P = שיא, N = שיא הבא, S = סריקה בודדת, R = איפוס, M = מרקרים, F = תדר, חצים ימינה/שמאלה = הזזת תדר, ‏+/- = זום, חצים למעלה/למטה = Ref level, ‏Ctrl+S = שמירת נקודה, ‏Esc = סגירת חלונית.
+- **שמירה:** "שמירה + העתק אל…" ו-"שמירת JPEG אל…" פותחים את חלון השמירה הרגיל של Windows. "שיתוף" פותח את הקובץ בתיקייה.
+- **קבצים:** נשמרים ב-`Documents\bladeRF Workbench` (סקרים, צילומים, CSV, פריסטים והגדרות).
+- **מיקום:** במחשב נייד המיקום מגיע מ-Windows (צריך להפעיל Location בהגדרות), וברוב המחשבים הוא מוערך לפי WiFi. למדידה מדויקת משתמשים ב"מיקום ידני" על תמונת האזור.
+- **סיבוב מסך:** לא רלוונטי במחשב, ולכן מוסתר.
+
+**הרצה מקוד מקור (למפתחים):** ‏`desktop\run_desktop.bat`. צריך Python 64-bit ו-numpy. אפשר גם `--sim` (סימולטור) או `--lib <path to bladeRF.dll>`.
+
 ## תצוגה מקדימה על המחשב, בלי טלפון
 
 ```
@@ -77,6 +98,7 @@ android/                         Android Studio project (Kotlin + Chaquopy)
   app/src/main/java/.../MainActivity.java USB permission + fd, location, rotation, sharing, file pickers
 native/                          libbladeRF 2.6.1 + libusb 1.0.29 sources, built by the NDK
   libbladeRF-android-fd.patch    the ONE change to libbladeRF: open the board via Android's USB fd
+desktop/                         Windows desktop edition: launcher (app window), run_desktop.bat
 tests/
 docs/User Guide - Cellular Measurements (HE).pdf   user guide (Hebrew)
 ```
