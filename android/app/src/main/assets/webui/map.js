@@ -1,4 +1,4 @@
-/* bladeRF Workbench Mobile -- the Map tab.
+/* YT Spectrum Analyzer -- the Map screen.
  *
  * A survey's points drawn where they were taken, over (a) an image of the
  * area the user uploaded and positioned, (b) OpenStreetMap tiles when online,
@@ -295,7 +295,6 @@ function mapLoop() {
 
 // ------------------------------------------------------------- location
 async function pollLocation() {
-  if (!MV.on) return;
   try {
     const loc = await getJSON('/api/location');
     MV.loc = loc;
@@ -314,8 +313,8 @@ function startLocation() {
   if (AND && AND.startLocation) { AND.startLocation(); return; }
   if (geoWatch == null && navigator.geolocation) {
     geoWatch = navigator.geolocation.watchPosition(
-      (p) => api('location', {lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, src: 'browser'}),
-      () => {}, {enableHighAccuracy: true, maximumAge: 2000});
+      (p) => { window.LOC_ERR = 0; api('location', {lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, src: 'browser'}); },
+      (e) => { window.LOC_ERR = e && e.code || 2; }, {enableHighAccuracy: true, maximumAge: 2000});
   }
 }
 
@@ -440,7 +439,7 @@ function composeJpeg(c, sp, head, meta) {
   const y0 = head + sp.height + 14;
   (meta.foot || []).forEach((l, i) => x.fillText(l, 24, y0 + i * 34));
   x.fillStyle = '#6f8396'; x.font = '20px system-ui'; x.textAlign = 'right';
-  x.fillText('bladeRF Workbench Mobile', W - 24, c.height - 30);
+  x.fillText(`YT Spectrum Analyzer v${(S.st && S.st.version) || ''}`, W - 24, c.height - 30);
 }
 function metaFor(p, name) {
   const when = new Date((p.t || Date.now() / 1000) * 1000);
@@ -694,7 +693,7 @@ $('m-track').onclick = async () => {
   else { await api('track', {what: 'start', sid: MV.sid}); MV.follow = true; }
   await pollState(); updateTrackBtn(); await loadSurvey(MV.sid);
 };
-$('m-save').onclick = () => saveDialog(null);
+$('m-save').onclick = () => recordDialog({map: true});
 $('m-place').onclick = () => { MV.placing = !MV.placing; $('m-place').classList.toggle('on', MV.placing); if (MV.placing) banner(t('m_place_hint')); else hideBanner(); };
 $('m-me').onclick = () => { MV.follow = true; if (MV.loc) { MV.v.x = mercX(MV.loc.lon); MV.v.y = mercY(MV.loc.lat); MV.v.res = Math.min(MV.v.res, 2); } MV.dirty = true; };
 $('m-survey').onclick = async () => { MV.list = (await getJSON('/api/surveys')).list; openPanel('surveys'); };
@@ -709,18 +708,15 @@ function resizeMap() {
   }
   MV.dirty = true; S.newMini = true;
 }
-function setTab(which) {
-  MV.on = which === 'map';
-  $('tab-spec').classList.toggle('on', !MV.on); $('tab-map').classList.toggle('on', MV.on);
-  $('main').classList.toggle('hidden', MV.on); $('mapview').classList.toggle('hidden', !MV.on);
-  closePanel();
+// screens.js shows/hides the sections; this only wakes the map up.
+function mapActivate(on) {
+  MV.on = !!on;
   if (MV.on) {
     startLocation();
     requestAnimationFrame(() => { resizeMap(); if (!MV.sv) loadSurveys(); else loadSurvey(MV.sid); });
-  } else requestAnimationFrame(resizeCanvases);
+  }
 }
-$('tab-spec').onclick = () => setTab('spec');
-$('tab-map').onclick = () => setTab('map');
+function setTab(which) { setScreen(which); }
 new ResizeObserver(() => { if (MV.on) resizeMap(); }).observe($('mapview'));
 setInterval(pollLocation, 1000);
 setInterval(() => { if (MV.on) updateTrackBtn(); }, 1000);

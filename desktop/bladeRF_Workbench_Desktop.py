@@ -1,5 +1,5 @@
 """
-bladeRF Workbench -- desktop edition (Windows).
+YT Spectrum Analyzer -- desktop edition (Windows). Formerly "bladeRF Workbench".
 
 The SAME engine and the SAME screens as the phone app: the desktop program's
 sweep engine (workbench_core.py, byte-identical to "bladeRF Workbench.py")
@@ -41,7 +41,8 @@ try:
 except Exception:
     pass
 
-APP = "bladeRF Workbench"
+APP = "YT Spectrum Analyzer"
+OLD_APP = "bladeRF Workbench"      # data folder of the earlier versions
 PORT = 18765          # fixed, so a second start just brings up a window
 
 
@@ -68,6 +69,13 @@ def data_dir():
     if not os.path.isdir(docs):
         docs = os.path.expanduser("~")
     d = os.path.join(docs, APP)
+    old = os.path.join(docs, OLD_APP)
+    if not os.path.isdir(d) and os.path.isdir(old):
+        # keep the recordings, surveys and presets of the earlier versions
+        try:
+            os.rename(old, d)
+        except OSError:
+            d = old
     os.makedirs(d, exist_ok=True)
     return d
 
@@ -97,6 +105,15 @@ def open_window(url, profile):
     return None
 
 
+def running_version():
+    try:
+        import json
+        with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/api/state", timeout=1.5) as r:
+            return json.loads(r.read()).get("version", "")
+    except Exception:
+        return ""
+
+
 def already_running():
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/api/state", timeout=1.5) as r:
@@ -115,9 +132,16 @@ def main():
 
     ddir = data_dir()
     url = f"http://127.0.0.1:{a.port}/?desktop=1"
+    sys.path.insert(0, engine_dir())
+    import mobile_app
     if a.port == PORT and already_running():
-        open_window(url, os.path.join(ddir, ".window"))
-        return 0
+        if running_version() == mobile_app.APP_VERSION:
+            open_window(url, os.path.join(ddir, ".window"))
+            return 0
+        # an OLDER copy is still running on the usual port (an old .exe left
+        # open): do not show its window -- run this version beside it.
+        a.port = PORT + 1
+        url = f"http://127.0.0.1:{a.port}/?desktop=1"
 
     # a windowed .exe has no console: keep a log next to the data
     if getattr(sys, "frozen", False):
@@ -125,8 +149,6 @@ def main():
         sys.stdout = sys.stderr = log
     print(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} start ---", flush=True)
 
-    sys.path.insert(0, engine_dir())
-    import mobile_app
     mobile_app.DESKTOP = True
     mobile_app.start_server(ddir, web_dir(), a.port, a.lib, a.sim)
     print(url, flush=True)

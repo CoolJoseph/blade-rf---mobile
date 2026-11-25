@@ -78,7 +78,7 @@ public class MainActivity extends ComponentActivity {
     private static final String LOADING_HTML =
         "<body style='background:#07090b;color:#8fa6bb;font:16px sans-serif;display:flex;"
         + "align-items:center;justify-content:center;height:90vh;flex-direction:column'>"
-        + "<div style='color:#ffd24a;font-weight:bold;font-size:20px'>bladeRF Workbench Mobile</div>"
+        + "<div style='color:#ffd24a;font-weight:bold;font-size:20px'>YT Spectrum Analyzer</div>"
         + "<div style='margin-top:12px'>Starting the engine… / מפעיל את המנוע…</div></body>";
 
     private WebView web;
@@ -89,6 +89,7 @@ public class MainActivity extends ComponentActivity {
     private UsbDevice usbDev;
     private UsbManager usb;
     private LocationManager loc;
+    private boolean askedLocation = false;
     private File appData;
     private boolean locOn = false;
     private Location lastFix;
@@ -169,6 +170,18 @@ public class MainActivity extends ComponentActivity {
             UsbDevice dev = deviceFrom(intent);
             if (dev == null) dev = findBladeRF();
             if (dev != null) connectUsb(dev);
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Back from Settings with the permission granted or GPS switched on:
+        // re-register so the new provider is actually used.
+        if (locOn && loc != null
+            && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            stopLocation();
+            startLocation();
         }
     }
 
@@ -498,6 +511,7 @@ public class MainActivity extends ComponentActivity {
                         : n.endsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         : (n.endsWith(".jpg") || n.endsWith(".jpeg")) ? "image/jpeg"
                         : n.endsWith(".kml") ? "application/vnd.google-earth.kml+xml"
+                        : n.endsWith(".webm") ? "video/webm"
                         : "application/octet-stream";
                     Intent send = new Intent(Intent.ACTION_SEND);
                     send.setType(type);
@@ -512,6 +526,45 @@ public class MainActivity extends ComponentActivity {
 
         @JavascriptInterface
         public void startLocation() { runOnUiThread(MainActivity.this::startLocation); }
+
+        /** {"perm":"granted|denied","gps":bool,"net":bool} -- polled by the
+         *  page so a refused permission or GPS switched off is never silent. */
+        @JavascriptInterface
+        public String locationStatus() {
+            boolean granted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                || checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+            boolean gps = false, net = false;
+            try { gps = loc.isProviderEnabled(LocationManager.GPS_PROVIDER); } catch (Exception ignored) { }
+            try { net = loc.isProviderEnabled(LocationManager.NETWORK_PROVIDER); } catch (Exception ignored) { }
+            return "{\"perm\":\"" + (granted ? "granted" : "denied") + "\",\"gps\":" + gps + ",\"net\":" + net + "}";
+        }
+
+        /** The red "location is off" bar was tapped: ask again, or open the
+         *  settings page that can fix it (permission refused for good, or GPS off). */
+        @JavascriptInterface
+        public void fixLocation() {
+            runOnUiThread(() -> {
+                boolean granted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                    || checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+                try {
+                    if (!granted) {
+                        if (shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION) || !askedLocation) {
+                            askedLocation = true;
+                            MainActivity.this.startLocation();
+                        } else {
+                            Intent i = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                Uri.fromParts("package", getPackageName(), null));
+                            startActivity(i);
+                        }
+                    } else if (!loc.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                        startActivity(new Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+                    } else {
+                        locOn = false;
+                        MainActivity.this.startLocation();
+                    }
+                } catch (Exception e) { toast("Open Settings > Apps > YT Spectrum Analyzer > Permissions > Location"); }
+            });
+        }
 
         /** Copy a file the app wrote to a place the user picks (Downloads, Drive, ...). */
         @JavascriptInterface

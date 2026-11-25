@@ -11,8 +11,8 @@ android {
         applicationId = "com.netline.bladerfmobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 12
+        versionName = "1.2"
         ndk {
             // arm64 = every current phone; x86_64 = the Android Studio emulator
             abiFilters += listOf("arm64-v8a", "x86_64")
@@ -29,6 +29,19 @@ android {
         cmake {
             path = file("../../native/CMakeLists.txt")
             version = "3.22.1"
+        }
+    }
+
+    // ONE fixed signing key, kept in the repository. Without it every GitHub
+    // build signs with a fresh random debug key, and Android refuses to
+    // install a new build over the old one ("app not installed" / the old
+    // version silently stays). Fine for in-house use; not a store key.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("ci-debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
         }
     }
 
@@ -68,6 +81,9 @@ chaquopy {
 }
 
 dependencies {
+    // androidx pulls kotlin-stdlib 1.8.x while an older library still pulls
+    // kotlin-stdlib-jdk7/jdk8 1.6.21: the same classes twice. The BOM lines
+    // them all up on one version (the jdk7/jdk8 jars are empty from 1.8 on).
     implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.8.22"))
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-ktx:1.9.3")

@@ -1,5 +1,5 @@
 """
-bladeRF Workbench Mobile -- the phone back end.
+YT Spectrum Analyzer (formerly bladeRF Workbench Mobile) -- the back end.
 
 The radio, the sweep and every piece of DSP are the DESKTOP program's own
 code (workbench_core.py is "bladeRF Workbench.py" copied in unchanged), run
@@ -48,6 +48,7 @@ for _b in (("LTE B5 UL", 824e6, 849e6, "850 MHz"),
     if not any(x[0] == _b[0] for x in wb.BAND_PLAN):
         wb.BAND_PLAN.append(_b)
 
+APP_NAME = "YT Spectrum Analyzer"
 APP_VERSION = "1.2"
 DESKTOP = False          # set by the Windows launcher (desktop edition)
 NATIVE_LOG = [""]        # Android: libbladeRF/libusb messages land in this file
@@ -133,6 +134,7 @@ class Controller:
         }
         self._load_settings()
         self.presets = self._load_presets()
+        self.missions = self._load_missions()
 
     # ------------------------------------------------------------------ files
     def _settings_path(self):
@@ -312,6 +314,11 @@ class Controller:
                             "Most often this is POWER: a phone port cannot feed the "
                             "bladeRF 2.0 -- use a powered USB hub / Y-cable or the "
                             "board's DC input. Also try another OTG cable.")
+                if "firmware update" in msg.lower() or "(-13)" in msg:
+                    msg += ("\n\nThe board's FX3 firmware is older than this FPGA/libbladeRF "
+                            "needs. Update it once from a PC: download "
+                            "nuand.com/fx3/bladeRF_fw_latest.img and run "
+                            "bladeRF-cli -f bladeRF_fw_latest.img, then unplug/replug.")
                 if not self._fpga_file() and self.usb_fd >= 0:
                     msg += ("\n\nNo FPGA image (hostedxA4.rbf) on the phone. If the board "
                             "does not load its FPGA from flash, it cannot start: "
@@ -534,6 +541,7 @@ class Controller:
             r = self._res
         msg = self._msg if time.time() - self._msg_t < 6 else ""
         return {
+            "app_name": APP_NAME,
             "version": APP_VERSION,
             "core_version": wb.version_line(),
             "settings": s,
@@ -974,7 +982,7 @@ class Controller:
                 f"RBW {wb.fmt_hz_short(r.rbw)}",
                 f"gain {self.settings['gain']:.0f} dB",
                 f"source {getattr(self.src, 'info', '')}",
-                f"bladeRF Workbench Mobile {APP_VERSION}"]
+                f"{APP_NAME} {APP_VERSION}"]
         rows = []
         for j in range(r.freqs.size):
             rows.append([f"{r.freqs[j]:.1f}"] +
@@ -996,6 +1004,179 @@ class Controller:
             traceback.print_exc()
             xlsx = ""
         return {"ok": True, "csv": stem + ".csv", "xlsx": xlsx}
+
+    # ------------------------------------------------------------ missions
+    # A mission is a saved recipe for hands-free work: which bands to visit,
+    # how long to dwell on each, what to save there, how often to repeat.
+    # The UI runs it (it draws the pictures and the video); this only keeps
+    # the recipes.
+    def _missions_path(self):
+        return os.path.join(self.files_dir, "missions.json")
+
+    def _load_missions(self):
+        try:
+            with open(self._missions_path(), encoding="utf-8") as fh:
+                data = json.load(fh)
+            return [self._clean_mission(m) for m in data if isinstance(m, dict)]
+        except Exception:
+            return []
+
+    def _save_missions(self):
+        tmp = self._missions_path() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(self.missions, fh, ensure_ascii=False, indent=1)
+        os.replace(tmp, self._missions_path())
+
+    @staticmethod
+    def _clean_mission(m: dict) -> dict:
+        def num(k, d, lo, hi):
+            try:
+                return float(min(max(float(m.get(k, d)), lo), hi))
+            except (TypeError, ValueError):
+                return float(d)
+        out = m.get("outputs") or {}
+        gain = m.get("gain")
+        try:
+            gain = None if gain in (None, "") else float(gain)
+        except (TypeError, ValueError):
+            gain = None
+        try:
+            vs = float(min(max(float(out.get("video_s", 5) or 5), 2), 30))
+        except (TypeError, ValueError):
+            vs = 5.0
+        repeat = m.get("repeat") if m.get("repeat") in ("once", "count", "continuous") else "once"
+        return {
+            "id": str(m.get("id") or ("m" + str(int(time.time() * 1000)))),
+            "name": str(m.get("name") or "Mission").strip()[:60],
+            "presets": [str(x) for x in (m.get("presets") or [])][:40],
+            "dwell": num("dwell", 5, 1, 600),
+            "gain": gain,
+            "outputs": {"image": bool(out.get("image", True)),
+                        "video": bool(out.get("video", False)),
+                        "video_s": vs,
+                        "data": bool(out.get("data", True)),
+                        "log": bool(out.get("log", False))},
+            "map": bool(m.get("map", True)),
+            "track": bool(m.get("track", False)),
+            "repeat": repeat,
+            "count": int(num("count", 3, 1, 1000)),
+            "interval": num("interval", 0, 0, 3600),
+            "created": float(m.get("created") or time.time()),
+        }
+
+    def mission_op(self, d: dict) -> list:
+        op = d.get("op")
+        if op == "save":
+            m = self._clean_mission(d.get("mission") or {})
+            for i, x in enumerate(self.missions):
+                if x["id"] == m["id"]:
+                    self.missions[i] = m
+                    break
+            else:
+                self.missions.append(m)
+        elif op == "delete":
+            self.missions = [x for x in self.missions if x["id"] != d.get("id")]
+        self._save_missions()
+        return self.missions
+
+    # ---------------------------------------------------------- recordings
+    def record(self, d: dict) -> dict:
+        """Save what is on screen now as a "spectrum recording": dry data
+        (CSV of the traces as drawn), a full log (JSON with everything) and,
+        if asked, a point on the map. Pictures and video are made by the UI
+        and arrive through /api/blob under the same base name."""
+        with self._lock:
+            r = self._res
+        if r is None:
+            return {"ok": False, "error": "no spectrum yet"}
+        base = os.path.basename(str(d.get("base") or f"REC {_now_stamp()}")).strip() or f"REC {_now_stamp()}"
+        stem = os.path.join(self.capture_dir, base)
+        loc = self.location()
+        if loc and loc.get("age", 0) > 30:
+            loc = None
+        files = []
+        f = np.asarray(r.freqs, float)
+        modes = self.settings["traces"]
+        cols = []
+        for i, m in enumerate(modes):
+            if m != "Off" and i < len(r.traces) and r.traces[i] is not None \
+                    and np.asarray(r.traces[i]).size == f.size:
+                cols.append((f"Trace {i + 1} {m} (dBm)", np.asarray(r.traces[i], float)))
+        pm = r.power_mean if r.power_mean is not None else r.power
+        band, lo, hi, phz, pdb = sv.measure(f, np.asarray(pm, float),
+                                            np.asarray(r.power, float), r.rbw)
+        when = time.time()
+        meta = [
+            ("app", f"{APP_NAME} {APP_VERSION}"),
+            ("time", time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(when))),
+            ("name", str(d.get("name") or "")),
+            ("mission", str(d.get("mission") or "")),
+            ("latitude", f"{loc['lat']:.7f}" if loc else ""),
+            ("longitude", f"{loc['lon']:.7f}" if loc else ""),
+            ("accuracy_m", f"{loc['acc']:.0f}" if loc and loc.get("acc") is not None else ""),
+            ("location_source", loc["src"] if loc else "NONE - not geo-tagged"),
+            ("center_hz", f"{self.settings['center']:.0f}"),
+            ("span_hz", f"{self.settings['span']:.0f}"),
+            ("rbw_hz", f"{float(r.rbw):.0f}"),
+            ("gain_db", f"{self.settings['gain']:.0f}"),
+            ("band_power_dbm", "" if band is None else f"{band:.2f}"),
+            ("peak_dbm", "" if pdb is None else f"{pdb:.2f}"),
+            ("peak_hz", "" if phz is None else f"{phz:.0f}"),
+            ("overload", "yes" if r.overload else "no"),
+            ("source", getattr(self.src, "info", "")),
+            ("simulated", "yes" if self._is_sim() else "no"),
+        ]
+        if d.get("data", True):
+            with open(stem + ".csv", "w", encoding="utf-8", newline="") as fh:
+                for k, v in meta:
+                    fh.write(f"# {k},{str(v).replace(',', ' ')}\n")
+                fh.write(",".join(["Frequency (Hz)"] + [c[0] for c in cols]) + "\n")
+                for j in range(f.size):
+                    fh.write(",".join([f"{f[j]:.1f}"] + [
+                        f"{c[1][j]:.2f}" if np.isfinite(c[1][j]) else "" for c in cols]) + "\n")
+            files.append(stem + ".csv")
+        point = None
+        sid = ""
+        if d.get("map"):
+            try:
+                sid = d.get("sid") or self.current_survey()
+                point = self.snapshot(sid, str(d.get("name") or base))
+            except Exception as exc:
+                traceback.print_exc()
+                point = None
+        if d.get("log"):
+            def clean(a):
+                return [None if not np.isfinite(x) else round(float(x), 2) for x in a]
+            log = {
+                "app": APP_NAME, "version": APP_VERSION,
+                "engine": wb.version_line(),
+                "time": when, "time_text": dict(meta)["time"],
+                "name": d.get("name") or "", "mission": d.get("mission") or "",
+                "location": loc,
+                "settings": {k: v for k, v in self.settings.items() if k != "ui"},
+                "source": {"info": getattr(self.src, "info", ""),
+                           "radio": isinstance(self.src, wb.BladeRF),
+                           "simulated": self._is_sim(),
+                           "usb_speed": getattr(self, "_usb_speed", None)},
+                "frame": {"rbw": float(r.rbw), "rbw_req": float(r.rbw_req),
+                          "segments": int(r.segments), "nfft": int(r.nfft),
+                          "sweep_rate": float(r.rate), "fs": float(r.fs),
+                          "overload": bool(r.overload)},
+                "band_power": {"dbm": band, "lo": lo, "hi": hi},
+                "peak": {"hz": phz, "dbm": pdb},
+                "signals": self.signals(max_n=40).get("items", []),
+                "markers": d.get("markers") or [],
+                "display": d.get("display") or {},
+                "map_point": {"sid": sid, "id": point.get("id")} if point else None,
+                "freqs_hz": [round(float(x), 1) for x in f],
+                "traces": {name: clean(a) for name, a in cols},
+            }
+            with open(stem + ".json", "w", encoding="utf-8") as fh:
+                json.dump(log, fh, ensure_ascii=False, default=float)
+            files.append(stem + ".json")
+        return {"ok": True, "base": base, "files": files, "location": loc,
+                "point": point, "sid": sid,
+                "band_dbm": band, "peak_dbm": pdb, "peak_hz": phz}
 
     def save_blob(self, name: str, data: bytes) -> dict:
         base = os.path.basename(name) or f"capture {_now_stamp()}.png"
@@ -1094,6 +1275,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(c.list_captures())
             if u.path == "/api/location":
                 return self._json(c.location())
+            if u.path == "/api/missions":
+                return self._json(c.missions)
             if u.path == "/api/surveys":
                 return self._json({"current": c.current_survey(create=False),
                                    "list": c.surveys.list()})
@@ -1182,6 +1365,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "n": n, "presets": c.presets})
             if op == "csv":
                 return self._json(c.save_csv())
+            if op == "record":
+                return self._json(c.record(d))
+            if op == "mission":
+                return self._json({"ok": True, "missions": c.mission_op(d)})
             if op == "desktop":
                 return self._json(desktop_op(c, d))
             if op == "location":
