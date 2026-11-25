@@ -22,6 +22,11 @@ jobs:
             exit 1
           fi
 
+      - name: Android fix for libbladeRF
+        run: |
+          sed -i 's|define THREAD_CANCEL(m) pthread_cancel(m)|define THREAD_CANCEL(m) ((void)(m))|' native/bladeRF/host/common/include/thread.h
+          grep -n "THREAD_CANCEL" native/bladeRF/host/common/include/thread.h
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
