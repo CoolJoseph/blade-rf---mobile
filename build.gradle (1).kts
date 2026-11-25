@@ -32,6 +32,19 @@ android {
         }
     }
 
+    // ONE fixed signing key, kept in the repository. Without it every GitHub
+    // build signs with a fresh random debug key, and Android refuses to
+    // install a new build over the old one ("app not installed" / the old
+    // version silently stays). Fine for in-house use; not a store key.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("ci-debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
