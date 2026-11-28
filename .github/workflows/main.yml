@@ -135,7 +135,9 @@ jobs:
           $name = "NPBRF WIN$ver"
           "EXE_NAME=$name" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           python -m pip install --quiet "numpy<2" pyinstaller
-          python -m PyInstaller --noconfirm --onefile --windowed --name "$name" --icon desktop/netline.ico `
+          # the NETLINE icon if desktop/netline.ico was uploaded; otherwise build without it
+          $icon = @(); if (Test-Path desktop/netline.ico) { $icon = @("--icon", "desktop/netline.ico") } else { Write-Output "::warning::desktop/netline.ico not in the repository - exe built without the NETLINE icon" }
+          python -m PyInstaller --noconfirm --onefile --windowed --name "$name" @icon `
             --add-data "android/app/src/main/python;engine" `
             --add-data "android/app/src/main/assets/webui;webui" `
             --exclude-module PyQt5 --exclude-module pyqtgraph `
