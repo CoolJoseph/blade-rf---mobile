@@ -4,19 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#07090b">
-<title>YT Spectrum Analyzer</title>
+<link rel="icon" href="netline_mark.png">
+<title>NETLINE Spectrum Analyzer</title>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
 <div id="app">
   <section id="homeview" class="hidden">
     <div class="home-head">
-      <div class="logo">YT</div>
-      <div class="home-title"><b>YT Spectrum Analyzer</b><span id="home-ver" class="ver" dir="ltr">v—</span></div>
+      <div class="home-title" dir="ltr"><img class="home-logo" src="netline_logo.png" alt="NETLINE">
+        <div class="home-sub"><b>Spectrum Analyzer</b> <span class="npb">NPBRF</span><span id="home-ver" class="ver" dir="ltr">v—</span></div></div>
       <button id="h-lang" class="tbtn" title="עברית / English">EN</button>
     </div>
     <div id="home-status" class="home-status"></div>
     <div class="tiles">
+      <button class="tile t-cell" data-go="cell"><i>📶</i><b data-i18n="tab_cell">Cellular survey</b><small data-i18n="tile_cell">One press: every cellular band, saved per point</small></button>
       <button class="tile t-spec" data-go="spec"><i>📈</i><b data-i18n="tab_spec">Spectrum</b><small data-i18n="tile_spec">Live analyzer, markers, presets</small></button>
       <button class="tile t-mis" data-go="missions"><i>🗂</i><b data-i18n="tab_missions">Missions</b><small data-i18n="tile_missions">Hands-free scans and recordings</small></button>
       <button class="tile t-map" data-go="map"><i>🗺</i><b data-i18n="tab_map">Map</b><small data-i18n="tile_map">Recordings by location, walks</small></button>
@@ -24,13 +26,17 @@
       <button class="tile t-radio" data-go="radio"><i>📡</i><b data-i18n="k_radio">Radio</b><small data-i18n="tile_radio">bladeRF connection, FPGA</small></button>
       <button class="tile t-set" data-go="settings"><i>⚙︎</i><b data-i18n="k_settings">Settings</b><small data-i18n="tile_settings">Language, rotation, screen</small></button>
     </div>
+    <div class="home-mode"><span data-i18n="mode_label">Mode</span>
+      <button id="mode-field" class="btn sm" data-i18n="mode_field">Field</button>
+      <button id="mode-expert" class="btn sm" data-i18n="mode_expert">Expert</button></div>
     <div id="home-foot" class="home-foot" dir="ltr"></div>
   </section>
 
   <header id="topbar">
     <button id="b-home" class="tbtn home" data-i18n-title="tip_home">⌂</button>
-    <div id="brand" dir="ltr"><b class="full">YT Spectrum Analyzer</b><b class="short">YT SA</b><span id="ver" class="ver" dir="ltr">v—</span></div>
+    <div id="brand" dir="ltr"><img class="mark" src="netline_mark.png" alt=""><b class="full">NETLINE Spectrum Analyzer</b><b class="short">NETLINE</b><span id="ver" class="ver" dir="ltr">v—</span></div>
     <div id="tabs" class="tabs">
+      <button id="tab-cell" class="tab"><i>📶</i><span data-i18n="tab_cell_s">Cellular</span></button>
       <button id="tab-spec" class="tab on"><i>📈</i><span data-i18n="tab_spec">Spectrum</span></button>
       <button id="tab-missions" class="tab"><i>🗂</i><span data-i18n="tab_missions">Missions</span></button>
       <button id="tab-map" class="tab"><i>🗺</i><span data-i18n="tab_map">Map</span></button>
@@ -120,6 +126,7 @@
     <div id="mini-wrap"><canvas id="mini"></canvas><div id="mini-ro"></div></div>
   </section>
 
+  <section id="cellview" class="hidden"><div id="cell-body"></div></section>
   <section id="missionview" class="hidden"><div id="mission-body"></div></section>
 
   <div id="sheet" class="hidden">
@@ -136,6 +143,7 @@
 <script src="map.js"></script>
 <script src="record.js"></script>
 <script src="missions.js"></script>
+<script src="cell.js"></script>
 <script src="screens.js"></script>
 </body>
 </html>

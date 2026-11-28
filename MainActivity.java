@@ -76,9 +76,12 @@ public class MainActivity extends ComponentActivity {
     private static final int REQ_LOCATION = 41;
     private static final String ACTION_USB_PERMISSION = "com.netline.bladerfmobile.USB_PERMISSION";
     private static final String LOADING_HTML =
-        "<body style='background:#07090b;color:#8fa6bb;font:16px sans-serif;display:flex;"
+        "<body style='background:#111111;color:#8fa6bb;font:16px sans-serif;display:flex;"
         + "align-items:center;justify-content:center;height:90vh;flex-direction:column'>"
-        + "<div style='color:#ffd24a;font-weight:bold;font-size:20px'>YT Spectrum Analyzer</div>"
+        + "<div style='font-weight:900;font-size:30px;letter-spacing:2px;color:#fff;font-style:italic'>"
+        + "<span style='color:#ee7d00'>N</span>ETLINE</div>"
+        + "<div style='color:#fff;font-size:16px;margin-top:4px'>Spectrum Analyzer"
+        + " <span style='color:#ee7d00;font-weight:bold'>NPBRF</span></div>"
         + "<div style='margin-top:12px'>Starting the engine… / מפעיל את המנוע…</div></body>";
 
     private WebView web;
@@ -562,7 +565,7 @@ public class MainActivity extends ComponentActivity {
                         locOn = false;
                         MainActivity.this.startLocation();
                     }
-                } catch (Exception e) { toast("Open Settings > Apps > YT Spectrum Analyzer > Permissions > Location"); }
+                } catch (Exception e) { toast("Open Settings > Apps > NETLINE Spectrum Analyzer > Permissions > Location"); }
             });
         }
 

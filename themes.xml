@@ -6,5 +6,6 @@
         <item name="android:navigationBarColor">@color/bg</item>
     </style>
     <color name="bg">#FF07090B</color>
+    <color name="netline_bg">#FF111111</color>
     <color name="sim_bg">#FF3A2A08</color>
 </resources>

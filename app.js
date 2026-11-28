@@ -1,4 +1,4 @@
-/* YT Spectrum Analyzer -- front end (grew out of bladeRF Workbench Mobile).
+/* NETLINE Spectrum Analyzer -- front end (grew out of bladeRF Workbench Mobile).
  *
  * Talks to the Python back end on 127.0.0.1 (the desktop program's own
  * sweep engine). Everything here is presentation and touch handling; the
@@ -17,7 +17,7 @@ const RBW_LIST = [1e3, 3e3, 10e3, 30e3, 100e3, 300e3, 1e6, 3e6];
 const FS_LIST = [0, 5e6, 10e6, 20e6, 30.72e6, 40e6, 56e6];
 const PANEL_ACC = {freq: '--tune', presets: '--tune', bw: '--view', ampl: '--view', traces: '--view', display: '--view',
   markers: '--meas', signals: '--meas', radio: '--radio', capture: '--file', settings: '--file',
-  point: '--meas', surveys: '--file', mapset: '--file', alerts: '--radio', rec: '--file'};
+  point: '--meas', surveys: '--file', mapset: '--file', alerts: '--radio', rec: '--file', cellset: '--meas'};
 
 // ------------------------------------------------------------------ state
 const S = {
@@ -939,7 +939,7 @@ const PANELS = {
       AND && AND.pickFpga ? btn(t('fpga_load'), () => AND.pickFpga()) : null,
       h('div', {cls: 'note'}, t('fpga_note'))));
     b.append(box(t('about'), h('div', {cls: 'note ltr', style: 'white-space:pre-wrap'},
-      `${S.st.app_name || 'YT Spectrum Analyzer'} ${S.st.version}\nengine: ${S.st.core_version}`)));
+      `${S.st.app_name || 'NETLINE Spectrum Analyzer'} ${S.st.version}\nengine: ${S.st.core_version}`)));
   },
 
   capture(b) {

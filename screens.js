@@ -1,4 +1,4 @@
-/* YT Spectrum Analyzer -- screens: Home, Spectrum, Missions, Map.
+/* NETLINE Spectrum Analyzer -- screens: Home, Spectrum, Missions, Map.
  *
  * Also owns the location status: the GPS chip in the top bar, the red bar
  * that cannot be missed when location is refused or switched off, and the
@@ -8,24 +8,26 @@
 'use strict';
 
 const SCR = {cur: 'home'};
-const SCREENS = {home: 'homeview', spec: null, missions: 'missionview', map: 'mapview'};
+const SCREENS = {home: 'homeview', spec: null, cell: 'cellview', missions: 'missionview', map: 'mapview'};
 
 function setScreen(name) {
   if (name === 'recordings') { setScreen('spec'); openPanel('capture'); return; }
   if (name === 'radio' || name === 'settings') { setScreen('spec'); openPanel(name); return; }
   if (!(name in SCREENS)) name = 'spec';
   SCR.cur = name;
-  for (const n of ['home', 'spec', 'missions', 'map']) document.body.classList.toggle('scr-' + n, n === name);
+  for (const n of ['home', 'spec', 'cell', 'missions', 'map']) document.body.classList.toggle('scr-' + n, n === name);
   $('homeview').classList.toggle('hidden', name !== 'home');
   $('main').classList.toggle('hidden', name !== 'spec');
   $('presetbar').classList.toggle('hidden', name !== 'spec');
   $('missionview').classList.toggle('hidden', name !== 'missions');
+  $('cellview').classList.toggle('hidden', name !== 'cell');
   $('mapview').classList.toggle('hidden', name !== 'map');
-  for (const [id, n] of [['tab-spec', 'spec'], ['tab-missions', 'missions'], ['tab-map', 'map']]) $(id).classList.toggle('on', n === name);
+  for (const [id, n] of [['tab-cell', 'cell'], ['tab-spec', 'spec'], ['tab-missions', 'missions'], ['tab-map', 'map']]) $(id).classList.toggle('on', n === name);
   closePanel();
   mapActivate(name === 'map');
   if (name === 'spec') requestAnimationFrame(() => { applyLayout(); resizeCanvases(); });
   if (name === 'missions') renderMissions();
+  if (name === 'cell') renderCell();
   if (name === 'home') renderHome();
 }
 
@@ -41,15 +43,28 @@ function renderHome() {
   if (MS.run) box.append(pill('bad', `● ${t('ms_running')}: ${MS.run.m.name}`));
   const red = [...AL.active.values()].filter(a => a.level === 'red').length;
   if (red) box.append(h('button', {cls: 'hs bad', onclick: () => { setScreen('spec'); openPanel('alerts'); }}, h('span', {cls: 'dot'}), `${red} ⛔`));
-  $('home-foot').textContent = `${st.app_name || 'YT Spectrum Analyzer'} v${st.version} · engine ${String(st.core_version || '').split(' ').slice(0, 3).join(' ')}`;
+  applyMode();
+  $('home-foot').textContent = `${st.app_name || 'NETLINE Spectrum Analyzer'} v${st.version} · engine ${String(st.core_version || '').split(' ').slice(0, 3).join(' ')}`;
   $('h-lang').textContent = S.ui.lang === 'he' ? 'EN' : 'עב';
 }
 for (const b of document.querySelectorAll('.tile[data-go]')) b.addEventListener('click', () => setScreen(b.dataset.go));
 $('h-lang').onclick = () => { setLang(S.ui.lang === 'he' ? 'en' : 'he'); renderHome(); };
 $('b-home').onclick = () => setScreen('home');
 $('tab-spec').onclick = () => setScreen('spec');
+$('tab-cell').onclick = () => setScreen('cell');
 $('tab-missions').onclick = () => setScreen('missions');
 $('tab-map').onclick = () => setScreen('map');
+
+// ------------------------------------------------------------ user mode
+// Field = someone who only walks a site and samples: Cellular survey, Map,
+// Recordings. Expert = everything. Only the menus change.
+function applyMode() {
+  const field = S.ui.mode === 'field';
+  document.body.classList.toggle('field', field);
+  $('mode-field').classList.toggle('on', field); $('mode-expert').classList.toggle('on', !field);
+}
+$('mode-field').onclick = () => { S.ui.mode = 'field'; saveUi(); applyMode(); };
+$('mode-expert').onclick = () => { S.ui.mode = 'expert'; saveUi(); applyMode(); };
 
 // -------------------------------------------------------------- location
 // Android tells us the permission and provider state; a browser only tells
@@ -120,6 +135,7 @@ function locStatusBox() {
   updateLocUi();
   setScreen('home');
   setInterval(() => { if (SCR.cur === 'home') renderHome(); }, 2000);
+  setInterval(() => { if (SCR.cur === 'cell' && !CELL.run && !$('cell-body').contains(document.activeElement)) renderCell(); }, 3000);
 })();
 const _applyLang0 = applyLang;
-applyLang = function () { _applyLang0(); if (typeof SCR !== 'undefined') { updateLocUi(); if (SCR.cur === 'missions') renderMissions(); } };
+applyLang = function () { _applyLang0(); if (typeof SCR !== 'undefined') { updateLocUi(); if (SCR.cur === 'missions') renderMissions(); if (SCR.cur === 'cell') renderCell(); applyMode(); } };

@@ -1,5 +1,5 @@
 """
-YT Spectrum Analyzer -- desktop edition (Windows). Formerly "bladeRF Workbench".
+NETLINE Spectrum Analyzer -- desktop edition (Windows). Formerly "bladeRF Workbench".
 
 The SAME engine and the SAME screens as the phone app: the desktop program's
 sweep engine (workbench_core.py, byte-identical to "bladeRF Workbench.py")
@@ -41,8 +41,8 @@ try:
 except Exception:
     pass
 
-APP = "YT Spectrum Analyzer"
-OLD_APP = "bladeRF Workbench"      # data folder of the earlier versions
+APP = "NETLINE Spectrum Analyzer"
+OLD_APPS = ("YT Spectrum Analyzer", "bladeRF Workbench")   # data folders of earlier versions
 PORT = 18765          # fixed, so a second start just brings up a window
 
 
@@ -69,13 +69,14 @@ def data_dir():
     if not os.path.isdir(docs):
         docs = os.path.expanduser("~")
     d = os.path.join(docs, APP)
-    old = os.path.join(docs, OLD_APP)
-    if not os.path.isdir(d) and os.path.isdir(old):
-        # keep the recordings, surveys and presets of the earlier versions
-        try:
-            os.rename(old, d)
-        except OSError:
-            d = old
+    for name in OLD_APPS:
+        old = os.path.join(docs, name)
+        if not os.path.isdir(d) and os.path.isdir(old):
+            # keep the recordings, surveys and presets of the earlier versions
+            try:
+                os.rename(old, d)
+            except OSError:
+                d = old
     os.makedirs(d, exist_ok=True)
     return d
 

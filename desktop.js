@@ -39,7 +39,7 @@ if (DESKTOP) {
 
   document.addEventListener('DOMContentLoaded', () => {
     document.body.classList.add('desktop');
-    document.title = 'YT Spectrum Analyzer';
+    document.title = 'NETLINE Spectrum Analyzer';
     const rot = document.getElementById('b-rot'); if (rot) rot.style.display = 'none';
     // right-click = the phone's long-press: identify the signal under the mouse
     const spec = document.getElementById('spec');

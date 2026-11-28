@@ -14,7 +14,7 @@ const { chromium } = require('playwright');
     const p = await ctx.newPage();
     p.on('pageerror', e => errs.push(`${name}: ${e}`));
     p.on('console', m => { if (m.type() === 'error') errs.push(`${name}: ${m.text()}`); });
-    await p.goto(url); await p.waitForTimeout(2000); await p.evaluate(() => setScreen('spec')); await p.waitForTimeout(300);
+    await p.goto(url); await p.waitForTimeout(2000); await p.evaluate(() => { S.ui.mode = 'expert'; saveUi(); applyMode(); }); await p.evaluate(() => setScreen('spec')); await p.waitForTimeout(300);
     for (const lang of ['he', 'en']) {
       await p.evaluate((l) => setLang(l), lang);
       for (const k of ['freq', 'presets', 'bw', 'ampl', 'traces', 'display', 'markers', 'signals', 'radio', 'capture', 'settings']) {

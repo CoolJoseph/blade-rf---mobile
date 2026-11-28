@@ -1,5 +1,5 @@
 """
-YT Spectrum Analyzer (formerly bladeRF Workbench Mobile) -- the back end.
+NETLINE Spectrum Analyzer (formerly bladeRF Workbench Mobile) -- the back end.
 
 The radio, the sweep and every piece of DSP are the DESKTOP program's own
 code (workbench_core.py is "bladeRF Workbench.py" copied in unchanged), run
@@ -36,7 +36,8 @@ if HERE not in sys.path:
 import numpy as np                       # noqa: E402
 
 import workbench_core as wb              # noqa: E402
-import survey as sv                      # noqa: E402
+import survey as sv
+import cellscan as cs                      # noqa: E402
 
 # Bands in use in Israel that the desktop band plan does not list yet
 # (B5, B32 and NR n28). Added to the RUNNING copy only -- workbench_core.py
@@ -48,8 +49,9 @@ for _b in (("LTE B5 UL", 824e6, 849e6, "850 MHz"),
     if not any(x[0] == _b[0] for x in wb.BAND_PLAN):
         wb.BAND_PLAN.append(_b)
 
-APP_NAME = "YT Spectrum Analyzer"
-APP_VERSION = "1.2"
+APP_NAME = "NETLINE Spectrum Analyzer"
+PRODUCT = "NPBRF"            # the software's name in file names: NPBRF ANDR1.3 / NPBRF WIN1.3
+APP_VERSION = "1.3"
 DESKTOP = False          # set by the Windows launcher (desktop edition)
 NATIVE_LOG = [""]        # Android: libbladeRF/libusb messages land in this file
 LAST_SEEN = [0.0]        # time of the UI's last request (desktop: close detection)
@@ -83,6 +85,24 @@ DEFAULT_PRESETS = [
 
 TRACE_MODES = ("Live", "Max Hold", "Average", "Min Hold", "Off")
 N_TRACES = 4
+
+
+# Cellular downlinks for the SIMULATOR only (an Israeli-like site), so the
+# cellular survey can be tried without a radio. Added to the running
+# instance; workbench_core.py is untouched.
+_SIM_CELL = [
+    ("modulated", 773e6, -62, 10e6), ("modulated", 793e6, -70, 10e6),
+    ("modulated", 947.5e6, -66, 5e6), ("modulated", 1840e6, -58, 20e6),
+    ("modulated", 1867.5e6, -71, 15e6), ("modulated", 2135e6, -75, 15e6),
+    ("modulated", 2655e6, -73, 20e6), ("modulated", 3550e6, -80, 100e6),
+]
+
+
+def _sim_source(ch):
+    src = wb.Simulated(channel=ch)
+    for kind, f, p, bw in _SIM_CELL:
+        src.emitters.append(wb.Emitter(kind, f, p, bandwidth=bw, label="SIM cell"))
+    return src
 
 
 def _now_stamp():
@@ -128,6 +148,8 @@ class Controller:
             "traces": ["Live", "Max Hold", "Off", "Off"],
             "cal_offset": 0.0, "running": True, "port": 0,
             "survey": "", "sim_gps": False,
+            "cell": {"country": "IL", "disabled": [], "custom": [], "thr": 6.0,
+                     "sweeps": 3, "save_empty": False, "site": ""},
             "track_interval": 2.0, "track_dist": 0.0,
             # display-only, kept here so it survives a restart
             "ui": {},
@@ -324,7 +346,7 @@ class Controller:
                             "does not load its FPGA from flash, it cannot start: "
                             "Radio -> Load hostedxA4.rbf.")
                 self._radio_error = msg
-        return wb.Simulated(channel=int(self.settings.get("port", 0)) % 2)
+        return _sim_source(int(self.settings.get("port", 0)) % 2)
 
     def start(self, want_radio=True):
         with self._lock:
@@ -541,7 +563,7 @@ class Controller:
             r = self._res
         msg = self._msg if time.time() - self._msg_t < 6 else ""
         return {
-            "app_name": APP_NAME,
+            "app_name": APP_NAME, "product": PRODUCT,
             "version": APP_VERSION,
             "core_version": wb.version_line(),
             "settings": s,
@@ -1005,6 +1027,314 @@ class Controller:
             xlsx = ""
         return {"ok": True, "csv": stem + ".csv", "xlsx": xlsx}
 
+    # ------------------------------------------------------- cellular survey
+    # See cellscan.py for the logic. The page drives the sequence (it tunes,
+    # waits, draws the pictures); here: the band plan, the analysis of each
+    # 100 MHz view, the files of each point and the map point.
+    CELL_DEF = {"country": "IL", "disabled": [], "custom": [], "thr": 6.0,
+                "sweeps": 3, "save_empty": False, "site": ""}
+
+    def cell_cfg(self) -> dict:
+        c = dict(self.CELL_DEF)
+        c.update(self.settings.get("cell") or {})
+        return c
+
+    def cell_dir(self):
+        d = os.path.join(self.files_dir, "Cellular")
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    def cell_plan(self) -> dict:
+        c = self.cell_cfg()
+        bands = cs.plan_bands(c["country"], c["disabled"], c["custom"])
+        lo = getattr(self.src, "freq_min", F_MIN) or F_MIN
+        hi = getattr(self.src, "freq_max", F_MAX) or F_MAX
+        return {"cfg": c, "countries": {k: {"name": v["name"], "name_he": v["name_he"],
+                                            "bands": v["bands"]} for k, v in cs.COUNTRIES.items()},
+                "all": cs.all_bands(), "bands": bands,
+                "windows": cs.plan_windows(bands, max(lo, F_MIN), min(hi, F_MAX))}
+
+    def cell_set(self, d: dict):
+        c = self.cell_cfg()
+        for k in self.CELL_DEF:
+            if k in d:
+                c[k] = d[k]
+        if c["country"] not in cs.COUNTRIES:
+            c["country"] = "IL"
+        c["thr"] = float(min(max(float(c["thr"]), 3.0), 20.0))
+        c["sweeps"] = int(min(max(int(c["sweeps"]), 1), 20))
+        self.settings["cell"] = c
+        self.save_settings_soon()
+        return self.cell_plan()
+
+    def cell_start(self, d: dict) -> dict:
+        plan = self.cell_plan()
+        site = cs.safe_name(d.get("site") or plan["cfg"].get("site") or "Site")
+        self.cell_set({"site": site})
+        site_dir = os.path.join(self.cell_dir(), site)
+        n, pdir = cs.next_point_dir(site_dir, cs.safe_name(d.get("label") or "Point", 20))
+        os.makedirs(pdir, exist_ok=True)
+        loc = self.location()
+        self._cell = {"id": f"c{int(time.time() * 1000)}", "site": site, "site_dir": site_dir,
+                      "dir": pdir, "n": n, "label": os.path.basename(pdir),
+                      "lang": d.get("lang", "en"), "t0": time.time(),
+                      "loc0": loc if loc and loc.get("age", 99) <= 30 else None,
+                      "bands": plan["bands"], "windows": plan["windows"],
+                      "cfg": plan["cfg"], "views": {}, "images": []}
+        return {"ok": True, "run": self._cell["id"], "n": n, "label": self._cell["label"],
+                "folder": pdir, "windows": plan["windows"], "bands": plan["bands"]}
+
+    def _cell_traces(self, r):
+        modes = self.settings["traces"]
+        def pick(want):
+            for i, m in enumerate(modes):
+                if m == want and i < len(r.traces) and r.traces[i] is not None \
+                        and np.asarray(r.traces[i]).size == np.asarray(r.freqs).size:
+                    return np.asarray(r.traces[i], float)
+            return None
+        mean = pick("Average")
+        if mean is None:
+            mean = np.asarray(r.power_mean if r.power_mean is not None else r.power, float)
+        mx = pick("Max Hold")
+        if mx is None:
+            mx = np.asarray(r.power, float)
+        return mean, mx
+
+    def _cell_floor(self, run, view):
+        """The view's own floor, unless it is much higher than the quiet
+        views nearby (same gain, +-600 MHz): then the view is full of signal
+        and the neighbours' floor is the honest one."""
+        own = view["floor"]
+        near = [v["floor"] for v in run["views"].values()
+                if v is not view and v["floor"] is not None and v["gain"] == view["gain"]
+                and abs(v["lo"] - view["lo"]) <= 600e6]
+        if own is None:
+            return min(near) if near else -200.0
+        if near and own > min(near) + 6.0:
+            return min(near) + 3.0
+        return own
+
+    def cell_view(self, d: dict) -> dict:
+        run = getattr(self, "_cell", None)
+        if not run or run["id"] != d.get("run"):
+            return {"ok": False, "error": "no survey running"}
+        with self._lock:
+            r = self._res
+        w = run["windows"][int(d["idx"])]
+        if r is None:
+            return {"ok": False, "retry": True}
+        f = np.asarray(r.freqs, float)
+        if f.size < 16 or f[0] > w["lo"] + 2e6 or f[-1] < w["hi"] - 2e6:
+            return {"ok": False, "retry": True}       # the frame is not this view yet
+        mean, mx = self._cell_traces(r)
+        view = {"idx": int(d["idx"]), "lo": w["lo"], "hi": w["hi"], "gain": float(self.settings["gain"]),
+                "rbw": float(r.rbw), "f": f, "mean": mean, "max": mx,
+                "floor": cs.floor_of(mean), "overload": bool(r.overload)}
+        run["views"][view["idx"]] = view
+        floor = self._cell_floor(run, view)
+        bands = [b for b in run["bands"] if b["key"] in w["bands"]]
+        car = cs.analyse_view(f, mean, mx, view["rbw"], bands, floor, run["cfg"]["thr"])
+        view["car"] = car
+        return {"ok": True, "active": bool(car), "floor": floor, "overload": view["overload"],
+                "carriers": [{k: v for k, v in c.items() if not k.startswith("_")} for c in car],
+                "save_img": bool(car) or bool(run["cfg"]["save_empty"])}
+
+    def cell_image(self, run_id, name, data) -> dict:
+        run = getattr(self, "_cell", None)
+        if not run or run["id"] != run_id:
+            return {"ok": False}
+        name = cs.safe_name(os.path.basename(name), 80)
+        path = os.path.join(run["dir"], name)
+        with open(path, "wb") as fh:
+            fh.write(data)
+        run["images"].append(name)
+        return {"ok": True, "path": path}
+
+    def cell_finish(self, d: dict) -> dict:
+        run = getattr(self, "_cell", None)
+        if not run or run["id"] != d.get("run"):
+            return {"ok": False, "error": "no survey running"}
+        self._cell = None
+        views = [run["views"][k] for k in sorted(run["views"])]
+        if not views:
+            try:
+                if not os.listdir(run["dir"]):
+                    os.rmdir(run["dir"])
+            except OSError:
+                pass
+            return {"ok": False, "error": "nothing measured"}
+        carriers = []
+        for v in views:                       # final pass: every floor known now
+            floor = self._cell_floor(run, v)
+            bands = [b for b in run["bands"] if v["lo"] < b["hi"] and v["hi"] > b["lo"]]
+            v["car"] = cs.analyse_view(v["f"], v["mean"], v["max"], v["rbw"], bands, floor, run["cfg"]["thr"])
+            v["floor_used"] = floor
+            carriers += v["car"]
+        edges = sorted({v["lo"] for v in views} | {v["hi"] for v in views})
+        carriers = cs.join_edges(carriers, edges)
+        for c in carriers:
+            c.pop("_btech", None)
+        summ = cs.summarise(run["bands"], carriers)
+        loc1 = self.location()
+        locs = [x for x in (run["loc0"], loc1 if loc1 and loc1.get("age", 99) <= 30 else None) if x]
+        loc = min(locs, key=lambda x: x.get("acc") or 999) if locs else None
+        when = run["t0"]
+        he = run["lang"] == "he"
+        aborted = bool(d.get("aborted"))
+        active = [b for b in summ if b["active"]]
+        nr = [b for b in active if any(c["tech"] == "5G NR" for c in b["carriers"])]
+        best = max((b for b in active if b["best_rsrp"] is not None), key=lambda b: b["best_rsrp"], default=None)
+        # ---- files
+        T = (lambda h, e: h if he else e)
+        lines = [
+            f"{APP_NAME} {APP_VERSION} — " + T("דגימת סלולר", "Cellular sample"),
+            "=" * 60,
+            T("אתר", "Site") + f": {run['site']}",
+            T("נקודה", "Point") + f": {run['label']}",
+            T("זמן", "Time") + ": " + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(when)),
+            T("מיקום", "Location") + ": " + (f"{loc['lat']:.7f}, {loc['lon']:.7f}" +
+                                              (f"  ±{loc['acc']:.0f} m" if loc.get("acc") else "") +
+                                              f"  ({loc['src']})" if loc else T("אין — לא נשמר נ״צ", "NONE — not geo-tagged")),
+            T("תכנית תדרים", "Band plan") + f": {cs.COUNTRIES[run['cfg']['country']]['name']}"
+            f"  ({len(run['bands'])} {T('תחומים', 'bands')}, {len(views)} {T('תצוגות של 100 MHz', 'views of 100 MHz')})",
+            T("מקור", "Source") + f": {getattr(self.src, 'info', '')}" + (T("  ⚠ סימולטור", "  ⚠ SIMULATOR") if self._is_sim() else ""),
+            T("סף זיהוי", "Detection threshold") + f": {run['cfg']['thr']:.0f} dB · {run['cfg']['sweeps']} sweeps",
+            T("⚠ הדגימה הופסקה לפני הסוף", "⚠ The sample was stopped before the end") if aborted else "",
+            "",
+            T("סיכום", "Summary") + ":",
+            "  " + T("תחומים פעילים", "Active bands") + f": {len(active)} / {len(summ)}"
+            + (" — " + ", ".join(b["name"] for b in active) if active else ""),
+            "  5G NR: " + (T("כן", "YES") + " — " + ", ".join(b["name"] for b in nr) if nr else T("לא זוהה", "not detected")),
+            ("  " + T("החזק ביותר", "Strongest") + f": {best['name']} @ {best['best_center'] / 1e6:.1f} MHz, "
+             f"RSRP≈{best['best_rsrp']:.0f} dBm ({best['level']})") if best else "",
+            "",
+            T("פירוט לפי תחום (RSRP משוער; ערוצים = נשאים שזוהו)", "Per band (RSRP is an estimate; channels = carriers found)") + ":",
+        ]
+        for b in summ:
+            lines.append(f"- {b['name']}  ({b['lo'] / 1e6:.0f}-{b['hi'] / 1e6:.0f} MHz DL): " +
+                         (T("פעיל", "ACTIVE") + f" — {b['n']} " + T("ערוצים", "carrier(s)") if b["active"]
+                          else T("אין אות סלולרי", "no cellular signal")))
+            for c in b["carriers"]:
+                lines.append(f"    {c['center'] / 1e6:9.2f} MHz  BW≈{c['bw'] / 1e6:g} MHz  {c['tech']:<8} "
+                             f"ch {c['ch_dbm']:.1f} dBm  RSRP≈{c['rsrp']:.0f} dBm  SNR {c['snr']:.0f} dB  [{c['level']}]")
+        lines += ["", T("תמונות (רק תצוגות שבהן נמצא אות)", "Pictures (only views where a signal was found)") + ":"]
+        lines += [f"  {x}" for x in run["images"]] or ["  —"]
+        with open(os.path.join(run["dir"], "דוח - report.txt"), "w", encoding="utf-8-sig") as fh:
+            fh.write("\n".join(x for x in lines if x is not None) + "\n")
+        hdr = "site,point,time,lat,lon,acc_m,band,band_lo_mhz,band_hi_mhz,active,carrier_mhz,bw_mhz,tech,ch_dbm,rsrp_est_dbm,snr_db,level\n"
+        rows = []
+        tstr = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(when))
+        base = [run["site"], run["label"], tstr, f"{loc['lat']:.7f}" if loc else "",
+                f"{loc['lon']:.7f}" if loc else "", f"{loc['acc']:.0f}" if loc and loc.get("acc") else ""]
+        for b in summ:
+            cols = base + [b["name"], f"{b['lo'] / 1e6:.0f}", f"{b['hi'] / 1e6:.0f}"]
+            if not b["carriers"]:
+                rows.append(cols + ["no", "", "", "", "", "", "", "none"])
+            for c in b["carriers"]:
+                rows.append(cols + ["yes", f"{c['center'] / 1e6:.2f}", f"{c['bw'] / 1e6:g}", c["tech"],
+                                    f"{c['ch_dbm']:.1f}", f"{c['rsrp']:.1f}", f"{c['snr']:.1f}", c["level"]])
+        body = "".join(",".join(str(x).replace(",", " ") for x in r) + "\n" for r in rows)
+        with open(os.path.join(run["dir"], "data.csv"), "w", encoding="utf-8-sig") as fh:
+            fh.write(hdr + body)
+        ssum = os.path.join(run["site_dir"], "סיכום אתר - site summary.csv")
+        new = not os.path.isfile(ssum)
+        with open(ssum, "a", encoding="utf-8-sig" if new else "utf-8") as fh:
+            if new:
+                fh.write(hdr)
+            fh.write(body)
+        cell = {b["key"]: {"name": b["name"], "active": b["active"], "n": b["n"], "rsrp": b["best_rsrp"],
+                           "ch": b["best_ch_dbm"], "center": b["best_center"], "tech": b["best_tech"],
+                           "level": b["level"], "nr": any(c["tech"] == "5G NR" for c in b["carriers"])}
+                for b in summ}
+        meta = {"app": APP_NAME, "version": APP_VERSION, "site": run["site"], "point": run["label"],
+                "n": run["n"], "time": when, "location": loc, "aborted": aborted,
+                "country": run["cfg"]["country"], "threshold_db": run["cfg"]["thr"],
+                "views": [{"lo": v["lo"], "hi": v["hi"], "gain": v["gain"], "rbw": v["rbw"],
+                           "floor_dbm": v.get("floor_used"), "overload": v["overload"], "carriers": len(v["car"])}
+                          for v in views],
+                "bands": summ, "images": run["images"], "source": getattr(self.src, "info", ""),
+                "simulated": self._is_sim()}
+        with open(os.path.join(run["dir"], "point.json"), "w", encoding="utf-8") as fh:
+            json.dump(meta, fh, ensure_ascii=False, indent=1, default=float)
+        # ---- map point (a survey named after the site)
+        point = None
+        try:
+            sid = next((x["id"] for x in self.surveys.list() if x.get("name") == run["site"]), None)
+            if sid is None:
+                sid = self.surveys.create(run["site"])["id"]
+            bv = max(views, key=lambda v: max([c["rsrp"] or -999 for c in v["car"]] or [-999]))
+            f2, mx2, mn2 = sv._pool(bv["f"], [bv["max"], bv["max"]], [bv["mean"]], sv.SNAP_POINTS_MAX)
+            with self._lock:
+                r = self._res
+            pt = self._point_common(r, loc) if r is not None else {"t": time.time()}
+            pt.update(kind="snap", name=run["label"], center=(bv["lo"] + bv["hi"]) / 2, span=bv["hi"] - bv["lo"],
+                      rbw=bv["rbw"], band_lo=None, band_hi=None,
+                      band_dbm=best["best_rsrp"] if best else None,
+                      peak_dbm=None, peak_hz=None, track=None, cell=cell,
+                      cell_site=run["site"], cell_dir=os.path.basename(run["dir"]), cell_images=run["images"])
+            pt["t"] = when
+            head = {"point": pt, "modes": ["Max Hold", "Average"], "signals": [],
+                    "center": pt["center"], "span": pt["span"], "rbw": pt["rbw"]}
+            point = self.surveys.add_point(sid, pt, sv.pack(head, f2, [mx2[0], mn2[0]]))
+            meta["map"] = {"sid": sid, "id": point["id"]}
+        except Exception:
+            traceback.print_exc()
+        return {"ok": True, "site": run["site"], "label": run["label"], "n": run["n"], "folder": run["dir"],
+                "location": loc, "bands": [{k: v for k, v in b.items()} for b in summ],
+                "images": run["images"], "map": meta.get("map"), "aborted": aborted}
+
+    def cell_sites(self) -> list:
+        out = []
+        root = self.cell_dir()
+        for site in sorted(os.listdir(root)):
+            sd = os.path.join(root, site)
+            if not os.path.isdir(sd):
+                continue
+            pts = []
+            for pd in os.listdir(sd):
+                pj = os.path.join(sd, pd, "point.json")
+                if os.path.isfile(pj):
+                    try:
+                        with open(pj, encoding="utf-8") as fh:
+                            m = json.load(fh)
+                        pts.append({"label": pd, "n": m.get("n", 0), "time": m.get("time"),
+                                    "location": m.get("location"), "images": m.get("images", []),
+                                    "bands": [{k: b[k] for k in ("key", "name", "active", "n", "best_rsrp", "best_tech", "level")}
+                                              for b in m.get("bands", [])]})
+                    except Exception:
+                        pass
+            pts.sort(key=lambda p: p["n"])
+            out.append({"site": site, "points": pts, "mtime": os.path.getmtime(sd)})
+        out.sort(key=lambda s: -s["mtime"])
+        return out
+
+    def cell_file(self, site, point, name) -> str:
+        p = os.path.join(self.cell_dir(), os.path.basename(site), os.path.basename(point), os.path.basename(name))
+        if not os.path.isfile(p):
+            raise FileNotFoundError(name)
+        return p
+
+    def cell_export(self, site) -> dict:
+        import zipfile
+        site = os.path.basename(site)
+        sd = os.path.join(self.cell_dir(), site)
+        if not os.path.isdir(sd):
+            return {"ok": False, "error": "no such site"}
+        zpath = os.path.join(self.capture_dir, f"{site} {_now_stamp()}.zip")
+        with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
+            for dp, _dn, fns in os.walk(sd):
+                for fn in fns:
+                    full = os.path.join(dp, fn)
+                    z.write(full, os.path.join(site, os.path.relpath(full, sd)))
+        return {"ok": True, "path": zpath}
+
+    def cell_delete_point(self, site, point) -> dict:
+        import shutil
+        pd = os.path.join(self.cell_dir(), os.path.basename(site), os.path.basename(point))
+        if os.path.isdir(pd):
+            shutil.rmtree(pd, ignore_errors=True)
+        return {"ok": True}
+
     # ------------------------------------------------------------ missions
     # A mission is a saved recipe for hands-free work: which bands to visit,
     # how long to dwell on each, what to save there, how often to repeat.
@@ -1277,6 +1607,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(c.location())
             if u.path == "/api/missions":
                 return self._json(c.missions)
+            if u.path == "/api/cell_plan":
+                return self._json(c.cell_plan())
+            if u.path == "/api/cell_sites":
+                return self._json(c.cell_sites())
+            if u.path == "/api/cell_file":
+                path = c.cell_file(q["site"][0], q["point"][0], q["name"][0])
+                with open(path, "rb") as f:
+                    data = f.read()
+                ext = os.path.splitext(path)[1].lower()
+                return self._send(200, data, {".jpg": "image/jpeg", ".txt": "text/plain; charset=utf-8",
+                                              ".csv": "text/csv", ".json": "application/json"}.get(ext, "application/octet-stream"))
             if u.path == "/api/surveys":
                 return self._json({"current": c.current_survey(create=False),
                                    "list": c.surveys.list()})
@@ -1319,6 +1660,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": True, "path": path})
                 return self._json(c.save_blob(q.get("name", [""])[0],
                                               self._body()))
+            if u.path == "/api/cell_img":
+                return self._json(c.cell_image(q["run"][0], q["name"][0], self._body()))
             if u.path == "/api/point_jpg":
                 path = c.surveys.point_jpg(q["sid"][0], q["id"][0], self._body(),
                                            q.get("name", [""])[0])
@@ -1367,6 +1710,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(c.save_csv())
             if op == "record":
                 return self._json(c.record(d))
+            if op == "cell_cfg":
+                return self._json(c.cell_set(d))
+            if op == "cell_start":
+                return self._json(c.cell_start(d))
+            if op == "cell_view":
+                return self._json(c.cell_view(d))
+            if op == "cell_finish":
+                return self._json(c.cell_finish(d))
+            if op == "cell_export":
+                return self._json(c.cell_export(d.get("site", "")))
+            if op == "cell_delete":
+                return self._json(c.cell_delete_point(d.get("site", ""), d.get("point", "")))
             if op == "mission":
                 return self._json({"ok": True, "missions": c.mission_op(d)})
             if op == "desktop":

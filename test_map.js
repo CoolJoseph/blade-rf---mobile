@@ -10,7 +10,7 @@ const OUT = process.argv[2] || '.';
   const p = await ctx.newPage();
   p.on('pageerror', e => errs.push(String(e))); p.on('console', m => { if (m.type()==='error') errs.push(m.text()); });
   p.on('dialog', d => d.dismiss());
-  await p.goto('http://127.0.0.1:8765/'); await p.waitForTimeout(2000); await p.evaluate(() => setScreen('spec')); await p.waitForTimeout(300);
+  await p.goto('http://127.0.0.1:8765/'); await p.waitForTimeout(2000); await p.evaluate(() => { S.ui.mode = 'expert'; saveUi(); applyMode(); }); await p.evaluate(() => setScreen('spec')); await p.waitForTimeout(300);
   await p.evaluate(() => api('set', {sim_gps: true}));
   await p.click('.pchip >> nth=7'); await p.waitForTimeout(1500);   // B3 DL
   await p.click('#tab-map'); await p.waitForTimeout(2500);

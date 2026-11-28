@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">YT Spectrum Analyzer</string>
-    <string name="app_name_sim">YT Simulator</string>
+    <string name="app_name">NETLINE Spectrum Analyzer</string>
+    <string name="app_name_sim">NETLINE Simulator</string>
 </resources>

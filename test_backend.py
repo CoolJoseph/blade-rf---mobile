@@ -195,7 +195,7 @@ try:
 
     # v1.2: name/version, recordings, missions
     st = get("/api/state")
-    check("app name + version in state", st.get("app_name") == "YT Spectrum Analyzer" and st.get("version") == "1.2")
+    check("app name + version in state", st.get("app_name") == "NETLINE Spectrum Analyzer" and st.get("version") == "1.3")
     post("location", {"lat": 32.1, "lon": 34.8, "acc": 6, "src": "gps"})
     rr = post("record", {"base": "REC test", "name": "Roof", "data": True, "log": True, "map": True,
                          "markers": [{"label": "M1", "hz": 2.45e9, "dbm": -40}]})
@@ -204,7 +204,7 @@ try:
     check("record: csv is geo-tagged", "# latitude,32.1" in csv_txt and "# longitude,34.8" in csv_txt)
     lg = json.load(open(rr["files"][1], encoding="utf-8"))
     check("record: full log content", lg["location"]["lat"] == 32.1 and lg["traces"] and len(lg["freqs_hz"]) > 100
-          and lg["markers"][0]["label"] == "M1" and lg["app"] == "YT Spectrum Analyzer")
+          and lg["markers"][0]["label"] == "M1" and lg["app"] == "NETLINE Spectrum Analyzer")
     check("record: map point with coordinates", rr["point"] and rr["point"]["lat"] == 32.1)
     rr2 = post("record", {"base": "REC only data", "data": True, "log": False, "map": False})
     check("record: data only", rr2["ok"] and len(rr2["files"]) == 1 and rr2["point"] is None)
@@ -217,6 +217,30 @@ try:
     check("mission listed", any(x["id"] == mm["id"] for x in get("/api/missions")))
     post("mission", {"op": "delete", "id": mm["id"]})
     check("mission deleted", not any(x["id"] == mm["id"] for x in get("/api/missions")))
+
+    # v1.3: cellular survey
+    import cellscan as csc
+    wins = csc.plan_windows(csc.plan_bands("IL"))
+    check("IL plan: 11 views of 100 MHz", len(wins) == 11 and all(abs(w["hi"] - w["lo"] - 100e6) < 1 for w in wins))
+    check("every IL band covered", all(any(w["lo"] <= b["lo"] and w["hi"] >= min(b["hi"], w["lo"] + 100e6) or (w["lo"] < b["hi"] and w["hi"] > b["lo"]) for w in wins) for b in csc.plan_bands("IL")))
+    import numpy as _np
+    fq = _np.linspace(1800e6, 1900e6, 1201); tr = _np.full(1201, -110.0)
+    tr[(fq > 1830e6) & (fq < 1850e6)] = -80.0; tr[(fq > 1870.0e6) & (fq < 1870.2e6)] = -60.0
+    cr = csc.analyse_view(fq, tr, tr, 100e3, [b for b in csc.plan_bands("IL") if b["key"] == "b3"], -110.0, 6.0)
+    check("detector: one 20 MHz LTE carrier, narrow spur ignored", len(cr) == 1 and cr[0]["bw"] == 20e6 and cr[0]["tech"] != "5G NR", cr)
+    post("cell_cfg", {"country": "IL", "site": "Test site"})
+    st0 = post("cell_start", {"site": "Test site", "label": "Point", "lang": "en"})
+    post("set", {"traces": ["Live", "Max Hold", "Average", "Off"], "center": st0["windows"][0]["center"], "span": 100e6})
+    time.sleep(2.5)
+    v = post("cell_view", {"run": st0["run"], "idx": 0})
+    check("cell view analysed", v["ok"] and "carriers" in v)
+    fin = post("cell_finish", {"run": st0["run"]})
+    check("cell point files", fin["ok"] and os.path.isfile(os.path.join(fin["folder"], "data.csv")) and
+          os.path.isfile(os.path.join(fin["folder"], "דוח - report.txt")))
+    check("cell point on the map", fin["map"] and any(p.get("cell") for p in get("/api/survey?id=" + fin["map"]["sid"])["points"]))
+    check("cell sites list", any(s["site"] == "Test site" and s["points"] for s in get("/api/cell_sites")))
+    ex = post("cell_export", {"site": "Test site"})
+    check("cell site export zip", ex["ok"] and os.path.getsize(ex["path"]) > 100)
 
     # USB fd path without a library does not crash; falls back to simulator
     r = post("usbfd", {"fd": -1, "connect": True})

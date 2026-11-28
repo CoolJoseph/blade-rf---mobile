@@ -11,8 +11,8 @@ android {
         applicationId = "com.netline.bladerfmobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "1.2"
+        versionCode = 13
+        versionName = "1.3"
         ndk {
             // arm64 = every current phone; x86_64 = the Android Studio emulator
             abiFilters += listOf("arm64-v8a", "x86_64")

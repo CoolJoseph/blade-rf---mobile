@@ -1,4 +1,4 @@
-/* YT Spectrum Analyzer -- the Map screen.
+/* NETLINE Spectrum Analyzer -- the Map screen.
  *
  * A survey's points drawn where they were taken, over (a) an image of the
  * area the user uploaded and positioned, (b) OpenStreetMap tiles when online,
@@ -24,6 +24,7 @@ const MV = {
   layer: 'auto', opacity: 0.85, img: null, imgKey: '', A: null, Ai: null,
   sel: null, placing: false, calib: null, follow: true, fitted: false,
   loc: null, tiles: new Map(), dirty: true, range: null,
+  cellBand: '',          // '' = the survey's own metric; '*best', '*5g' or a band key
 };
 const mapCv = $('map'), miniCv = $('mini');
 
@@ -85,6 +86,7 @@ async function loadSurvey(sid) {
   MV.sid = sid;
   MV.sv = await getJSON('/api/survey?id=' + encodeURIComponent(sid));
   $('m-survey-name').textContent = MV.sv.name + `  ·  ${MV.sv.points.length}`;
+  updateCellLayerChip();
   const b = MV.sv.base;
   const key = b ? sid + '/' + b.file : '';
   if (key !== MV.imgKey) {
@@ -127,13 +129,44 @@ function fitView() {
 }
 
 // --------------------------------------------------------------- colours
+// cellular points carry per-band results; colour by the band chosen in
+// the 📶 chip. A point with no signal in that band has no value (grey ✕).
+function cellKeys() {
+  const ks = new Map();
+  for (const p of (MV.sv ? MV.sv.points : [])) if (p.cell) for (const [k, b] of Object.entries(p.cell)) ks.set(k, b.name);
+  return ks;
+}
+function cellValue(p) {
+  const c = p.cell; if (!c) return undefined;
+  const vals = (pred) => Object.values(c).filter(b => b.active && b.rsrp != null && pred(b)).map(b => b.rsrp);
+  let v;
+  if (MV.cellBand === '*best') v = vals(() => true);
+  else if (MV.cellBand === '*5g') v = vals(b => b.nr);
+  else { const b = c[MV.cellBand]; v = b && b.active && b.rsrp != null ? [b.rsrp] : []; }
+  return v.length ? Math.max(...v) : NaN;
+}
+function cellMode() { return !!(MV.cellBand && MV.sv && MV.sv.points.some(p => p.cell)); }
+function updateCellLayerChip() {
+  let el = $('m-cell');
+  const ks = cellKeys();
+  if (!ks.size) { if (el) el.remove(); return; }
+  if (!el) { el = h('select', {id: 'm-cell', cls: 'mchip'}); $('m-survey').after(el);
+    el.addEventListener('change', () => { MV.cellBand = el.value; MV.range = null; MV.dirty = true; updateLegend(); }); }
+  if (!MV.cellBand) MV.cellBand = '*best';
+  el.textContent = '';
+  for (const [k, n] of [['*best', '📶 ' + t('cl_best')], ['*5g', '📶 5G ' + t('cl_only')], ...[...ks].map(([k, n]) => [k, '📶 ' + n]), ['', t('cl_metric')]]) {
+    const o = h('option', {value: k}, n); if (k === MV.cellBand) o.selected = true; el.append(o);
+  }
+}
 function ptValue(p) {
+  if (cellMode()) { const v = cellValue(p); return v === undefined ? NaN : v; }
   const kind = (MV.sv && MV.sv.metric && MV.sv.metric.kind) || 'band';
   const v = kind === 'peak' ? p.peak_dbm : p.band_dbm;
   return v == null ? NaN : v;
 }
 function valueRange() {
   if (MV.range) return MV.range;
+  if (cellMode()) return [-115, -70];      // fixed: colours mean the same for every band and site
   const vs = geoPoints().map(ptValue).filter(isFinite);
   if (!vs.length) return [-90, -30];
   let lo = Math.min(...vs), hi = Math.max(...vs);
@@ -152,6 +185,13 @@ function colorOf(v, rng) {
 }
 function updateLegend() {
   const el = $('m-legend'); if (!MV.sv) return;
+  if (cellMode()) {
+    const rng = valueRange(), grad = CSTOPS.map(([p]) => `${colorOf(rng[0] + p * (rng[1] - rng[0]), rng)} ${p * 100}%`).join(',');
+    const sel = $('m-cell'), name = sel && sel.selectedOptions[0] ? sel.selectedOptions[0].textContent.replace('📶 ', '') : '';
+    el.innerHTML = `RSRP≈ · ${name}<div class="bar" style="background:linear-gradient(90deg,${grad})"></div>` +
+      `<span class="ltr">${rng[0]} … ${rng[1]} dBm</span><br><span style="color:#aaa">✕ = ${t('cell_none')}</span>`;
+    return;
+  }
   const rng = valueRange(), kind = (MV.sv.metric && MV.sv.metric.kind) || 'band';
   const grad = CSTOPS.map(([p]) => `${colorOf(rng[0] + p * (rng[1] - rng[0]), rng)} ${p * 100}%`).join(',');
   const m = MV.sv.metric || {};
@@ -205,6 +245,8 @@ function drawMap() {
     ctx.lineWidth = snap ? 2 : 1; ctx.strokeStyle = p.sim ? '#ffb340' : (snap ? '#fff' : 'rgba(0,0,0,0.6)');
     if (p.sim) ctx.setLineDash([3, 2]); ctx.stroke(); ctx.setLineDash([]);
     if (MV.sel && MV.sel.id === p.id) { ctx.beginPath(); ctx.arc(x, y, r + 5, 0, 2 * Math.PI); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); }
+    if (p.cell && cellMode() && !isFinite(ptValue(p))) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath();
+      ctx.moveTo(x - 4, y - 4); ctx.lineTo(x + 4, y + 4); ctx.moveTo(x + 4, y - 4); ctx.lineTo(x - 4, y + 4); ctx.stroke(); }
     if (snap && p.name) { ctx.font = 'bold 11px system-ui'; ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
       ctx.strokeStyle = '#000'; ctx.lineWidth = 3; ctx.strokeText(p.name, x + 11, y); ctx.fillText(p.name, x + 11, y); }
   }
@@ -439,7 +481,7 @@ function composeJpeg(c, sp, head, meta) {
   const y0 = head + sp.height + 14;
   (meta.foot || []).forEach((l, i) => x.fillText(l, 24, y0 + i * 34));
   x.fillStyle = '#6f8396'; x.font = '20px system-ui'; x.textAlign = 'right';
-  x.fillText(`YT Spectrum Analyzer v${(S.st && S.st.version) || ''}`, W - 24, c.height - 30);
+  x.fillText(`NETLINE Spectrum Analyzer v${(S.st && S.st.version) || ''}`, W - 24, c.height - 30);
 }
 function metaFor(p, name) {
   const when = new Date((p.t || Date.now() / 1000) * 1000);
@@ -522,6 +564,16 @@ PANELS.point = async (b) => {
     p.sweeps ? h('b', null, t('sweeps_n')) : null, p.sweeps ? h('span', null, String(p.sweeps)) : null);
   b.append(kv);
   const sigBox = h('div');
+  if (p.cell) {
+    b.append(box('📶 ' + t('tab_cell'), h('div', {cls: 'cres'}, ...Object.values(p.cell).map(bd => h('div', {cls: 'crow'},
+      h('i', {cls: 'cdot', style: `background:${LEVEL_COL[bd.active ? bd.level : 'none']}`}),
+      h('span', {cls: 'cn'}, bd.name), h('span', {cls: 'cs'}, bd.active ? levelWord(bd.level) : t('cell_none')),
+      h('span', {cls: 'cv', dir: 'ltr'}, bd.active && bd.rsrp != null ? `≈${Math.round(bd.rsrp)} dBm` : ''),
+      h('span', {cls: 'ct'}, bd.active ? (bd.nr ? '5G' : bd.tech || '') : '')))),
+      (p.cell_images || []).length ? h('div', {cls: 'cimgs'}, ...p.cell_images.map(n => h('img', {
+        src: `/api/cell_file?site=${encodeURIComponent(p.cell_site)}&point=${encodeURIComponent(p.cell_dir)}&name=${encodeURIComponent(n)}`,
+        onclick: (e) => window.open(e.target.src, '_blank')}))) : h('div', {cls: 'note'}, t('cell_no_pics'))));
+  }
   b.append(sigBox);
   b.append(box(null, h('div', {cls: 'seg'},
     btn(t('pt_open'), () => { pushSet({center: p.center, span: p.span}, true); S.view = {c: p.center, s: p.span}; setTab('spec'); closePanel(); }, 'prim'),

@@ -15,7 +15,7 @@ const { chromium } = require('playwright');
     const p = await ctx.newPage();
     p.on('pageerror', e => errs.push(`${name}: ${e}`));
     p.on('console', m => { if (m.type() === 'error') errs.push(`${name}: console ${m.text()}`); });
-    await p.goto(url); await p.waitForTimeout(2500);
+    await p.goto(url); await p.waitForTimeout(2500); await p.evaluate(() => { S.ui.mode = 'expert'; saveUi(); applyMode(); });
     await p.evaluate(async () => { await api('set', {gain: 30, sim_gps: false}); S.set.gain = 30;
       for (const m of await (await fetch('/api/missions')).json()) await api('mission', {op: 'delete', id: m.id}); });
     for (const lang of ['he', 'en']) {

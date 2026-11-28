@@ -1,4 +1,4 @@
-/* YT Spectrum Analyzer -- "Save spectrum recording".
+/* NETLINE Spectrum Analyzer -- "Save spectrum recording".
  *
  * One button, a choice of what to keep: a picture (JPEG), a few seconds of
  * video, the dry data on screen (CSV), a full log (JSON with everything the
@@ -60,7 +60,7 @@ async function recordVideo(seconds, meta, onTick) {
   const draw = () => {
     x.fillStyle = '#12161a'; x.fillRect(0, 0, W, H); x.direction = 'ltr';
     x.fillStyle = '#ffd24a'; x.font = 'bold 24px system-ui'; x.textBaseline = 'top'; x.textAlign = 'left';
-    x.fillText(meta.title || 'YT Spectrum Analyzer', 16, 8);
+    x.fillText(meta.title || 'NETLINE Spectrum Analyzer', 16, 8);
     x.fillStyle = '#d7e2ec'; x.font = '17px system-ui';
     x.fillText(`${new Date().toLocaleString()}   ·   ${meta.line2 || ''}`, 16, 38);
     if (meta.sim) { x.fillStyle = '#ffb340'; x.textAlign = 'right'; x.font = 'bold 20px system-ui'; x.fillText(t('simulated_data'), W - 16, 10); x.textAlign = 'left'; }
@@ -79,7 +79,7 @@ async function recordVideo(seconds, meta, onTick) {
       x.strokeStyle = '#b4c0cc'; x.strokeRect(R.x + 0.5, y0 + 0.5, R.w, hh - 1);
     }
     x.fillStyle = '#6f8396'; x.font = '14px system-ui'; x.textAlign = 'right'; x.textBaseline = 'bottom';
-    x.fillText(`YT Spectrum Analyzer v${S.st.version}`, W - 12, H - 6);
+    x.fillText(`NETLINE Spectrum Analyzer v${S.st.version}`, W - 12, H - 6);
   };
   draw();
   const stream = c.captureStream(15);

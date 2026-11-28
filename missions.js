@@ -1,4 +1,4 @@
-/* YT Spectrum Analyzer -- Missions.
+/* NETLINE Spectrum Analyzer -- Missions.
  *
  * A mission is a saved recipe for hands-free work: which bands to visit (by
  * preset), how long to measure each, what to save there (picture, video,
