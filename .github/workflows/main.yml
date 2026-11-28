@@ -98,10 +98,20 @@ jobs:
           path: fx3/*.img
           if-no-files-found: warn
 
+      # File names carry the software name, the platform and the version:
+      # NPBRF ANDR1.3.apk -- the version is read from mobile_app.py.
+      - name: Name the APK
+        run: |
+          VER=$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' android/app/src/main/python/mobile_app.py)
+          mkdir -p out
+          cp android/app/build/outputs/apk/debug/app-debug.apk "out/NPBRF ANDR${VER}.apk"
+          echo "APK_NAME=NPBRF ANDR${VER}" >> "$GITHUB_ENV"
+          ls -la out
+
       - uses: actions/upload-artifact@v4
         with:
-          name: YT-Spectrum-Analyzer-apk
-          path: android/app/build/outputs/apk/debug/*.apk
+          name: ${{ env.APK_NAME }}
+          path: out/*.apk
           if-no-files-found: error
 
   # --------------------------------------------------------------------------
@@ -118,11 +128,14 @@ jobs:
           python-version: "3.11"
           architecture: x64
 
-      - name: Build YT Spectrum Analyzer.exe
+      - name: Build NPBRF WIN<version>.exe
         shell: pwsh
         run: |
+          $ver = (Select-String -Path android/app/src/main/python/mobile_app.py -Pattern '^APP_VERSION = "(.*)"').Matches[0].Groups[1].Value
+          $name = "NPBRF WIN$ver"
+          "EXE_NAME=$name" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           python -m pip install --quiet "numpy<2" pyinstaller
-          python -m PyInstaller --noconfirm --onefile --windowed --name "YT Spectrum Analyzer" `
+          python -m PyInstaller --noconfirm --onefile --windowed --name "$name" --icon desktop/netline.ico `
             --add-data "android/app/src/main/python;engine" `
             --add-data "android/app/src/main/assets/webui;webui" `
             --exclude-module PyQt5 --exclude-module pyqtgraph `
@@ -130,8 +143,8 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: YT-Spectrum-Analyzer-Windows
-          path: dist/YT Spectrum Analyzer.exe
+          name: ${{ env.EXE_NAME }}
+          path: dist/${{ env.EXE_NAME }}.exe
           if-no-files-found: error
 
       - name: Smoke test (simulator, no window) - diagnostic only
@@ -139,7 +152,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          $p = Start-Process -FilePath "dist/YT Spectrum Analyzer.exe" -ArgumentList "--sim","--no-window" -PassThru
+          $p = Start-Process -FilePath "dist/$env:EXE_NAME.exe" -ArgumentList "--sim","--no-window" -PassThru
           $ok = $false; $err = ""
           for ($i = 0; $i -lt 30 -and -not $ok; $i++) {
             Start-Sleep -Seconds 2
@@ -151,6 +164,6 @@ jobs:
           curl.exe -s -S -m 10 http://127.0.0.1:18765/api/state | Select-Object -First 1 | ForEach-Object { $_.Substring(0, [Math]::Min(400, $_.Length)) }
           "--- process alive: $(-not $p.HasExited)"
           "--- log.txt:"
-          Get-Content "$env:USERPROFILE\Documents\YT Spectrum Analyzer\log.txt" -ErrorAction SilentlyContinue | Select-Object -Last 60
+          Get-Content "$env:USERPROFILE\Documents\NETLINE Spectrum Analyzer\log.txt" -ErrorAction SilentlyContinue | Select-Object -Last 60
           Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
           if (-not $ok) { exit 1 }
